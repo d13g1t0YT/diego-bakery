@@ -225,11 +225,10 @@ function AppInner() {
   }, []);
 
   useEffect(() => {
-    if (!state) return;
+    if (!state || saving.current) return;
     stateRef.current = state;
-    if (saving.current) return;
     saving.current = true;
-    void saveState({ ...state, lastLocalChangeAt: new Date().toISOString() })
+    void saveState(state)
       .then(() => setSyncState(prev => prev === 'error' ? prev : 'saved'))
       .catch(() => setSyncState('error'))
       .finally(() => { saving.current = false; });
@@ -271,10 +270,10 @@ function AppInner() {
 
   useEffect(() => {
     if (!state?.admin?.token || !online) return;
-    scheduleCloudSync();
+    void refreshFromServer();
     const interval = window.setInterval(() => {
-      void flushCloudSync();
-    }, 15000);
+      void refreshFromServer();
+    }, 5000);
     return () => {
       window.clearInterval(interval);
       if (syncTimer.current) window.clearTimeout(syncTimer.current);
@@ -385,10 +384,14 @@ function AppInner() {
   }, [state, today, monthPrefix, pendingOrders]);
 
   function updateState(mutator: (current: BusinessState) => BusinessState) {
+    const current = stateRef.current;
+    if (!current) return;
     const changeAt = new Date().toISOString();
-    setState(prev => prev ? { ...mutator(prev), lastLocalChangeAt: changeAt } : prev);
+    const next = { ...mutator(current), lastLocalChangeAt: changeAt };
+    stateRef.current = next;
+    setState(next);
     setSyncState('saving');
-    if (stateRef.current?.admin?.token && online) scheduleCloudSync();
+    if (next.admin?.token && online) scheduleCloudSync();
   }
 
   function scheduleCloudSync() {
@@ -397,13 +400,14 @@ function AppInner() {
   }
 
   function commitState(value: SetStateAction<BusinessState | null>) {
+    const current = stateRef.current;
+    const rawNext = typeof value === 'function' ? value(current) : value;
     const changeAt = new Date().toISOString();
-    setState(previous => {
-      const next = typeof value === 'function' ? value(previous) : value;
-      return next ? { ...next, lastLocalChangeAt: changeAt } : next;
-    });
+    const next = rawNext ? { ...rawNext, lastLocalChangeAt: changeAt } : rawNext;
+    stateRef.current = next;
+    setState(next);
     setSyncState('saving');
-    if (stateRef.current?.admin?.token && online) scheduleCloudSync();
+    if (next?.admin?.token && online) scheduleCloudSync();
   }
 
   async function flushCloudSync() {
@@ -450,7 +454,8 @@ function AppInner() {
   }
 
   async function refreshFromServer() {
-    const token = stateRef.current?.admin?.token;
+    const local = stateRef.current;
+    const token = local?.admin?.token;
     if (!token || !online || !apiConfigured()) {
       setMessage(online ? 'Primero configura el acceso en línea.' : 'Estás sin conexión.');
       return;
@@ -458,30 +463,40 @@ function AppInner() {
 
     setSyncState('saving');
     try {
-      const [remoteState, publicOrders] = await Promise.all([getCloudState(token), getPublicOrders(token)]);
-      const local = stateRef.current;
-      if (!local) return;
-      const localIsNewer = Boolean(local.lastLocalChangeAt && (!local.lastSyncAt || local.lastLocalChangeAt > local.lastSyncAt));
-      const merged = localIsNewer ? mergeStatePreservingLocal(local, remoteState) : mergeStateFromCloud(local, remoteState);
+      const localIsUnsynced = Boolean(local.lastLocalChangeAt && (!local.lastSyncAt || local.lastLocalChangeAt > local.lastSyncAt));
+      if (localIsUnsynced) {
+        await putCloudState(token, local);
+        if (local.settings.autoBackup) await uploadBackup(token, local);
+      }
+
+      const [remoteState, publicOrders] = await Promise.all([
+        getCloudState(token),
+        getPublicOrders(token)
+      ]);
 
       const mapped = publicOrders.map(mapPublicOrder);
       const byRemote = new Map(mapped.map(o => [o.remoteId || o.id, o]));
-      const mergedOrders = merged.orders.map(order => {
-        const remote = order.remoteId ? byRemote.get(order.remoteId) : undefined;
-        return remote ? { ...order, ...remote, id: order.id, remoteId: order.remoteId } : order;
+      const remoteOrders = remoteState.orders.map(order => {
+        const publicOrder = order.remoteId ? byRemote.get(order.remoteId) : undefined;
+        return publicOrder ? { ...order, ...publicOrder, id: order.id, remoteId: order.remoteId } : order;
       });
-      const known = new Set(mergedOrders.map(o => o.remoteId).filter(Boolean));
-      mergedOrders.push(...mapped.filter(o => !known.has(o.remoteId || o.id)));
+      const known = new Set(remoteOrders.map(o => o.remoteId).filter(Boolean));
+      remoteOrders.push(...mapped.filter(o => !known.has(o.remoteId || o.id)));
 
-      const next = { ...merged, orders: mergedOrders, admin: local.admin, lastSyncAt: new Date().toISOString() };
+      const next = {
+        ...remoteState,
+        orders: remoteOrders,
+        admin: local.admin,
+        lastSyncAt: new Date().toISOString()
+      };
       stateRef.current = next;
       setState(next);
       setSyncState('saved');
-      setMessage(localIsNewer ? 'Cambios locales guardados y nube actualizada.' : 'Datos actualizados desde la nube.');
+      setMessage(localIsUnsynced ? 'Cambios guardados y sincronizados en todos tus dispositivos.' : 'Datos actualizados automáticamente.');
     } catch (error) {
       console.error(error);
       setSyncState('error');
-      setMessage('No se pudo actualizar desde la nube. Se conservaron tus datos.');
+      setMessage('No se pudo actualizar la nube. Tus datos locales se conservaron y se reintentará automáticamente.');
     }
   }
 
