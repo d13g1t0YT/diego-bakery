@@ -852,6 +852,16 @@ function AppInner() {
     });
   }
 
+  function changeCartQuantity(productId: string, delta: number) {
+    setCart(current => current.flatMap(item => {
+      if (item.productId !== productId) return [item];
+      const quantity = item.quantity + delta;
+      return quantity > 0
+        ? [{ ...item, quantity, subtotal: Number((quantity * item.unitPrice).toFixed(2)) }]
+        : [];
+    }));
+  }
+
   if (!ready || !state) {
     return <div className="splash"><div className="brand-mark">DB</div><h1>Diego Bakery</h1><p>Preparando tu negocio…</p></div>;
   }
@@ -876,6 +886,7 @@ function AppInner() {
       message={message}
       settings={state.settings}
       addCombo={addComboToCart}
+      changeCartQuantity={changeCartQuantity}
     />;
   }
 
@@ -1305,7 +1316,14 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
   return <div className="modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}><div className="modal"><div className="modal-head"><h3>{title}</h3><button className="icon-button" onClick={onClose}>×</button></div><div className="modal-body">{children}</div></div></div>;
 }
 
-function CustomerView({ products, cart, addToCart, customer, setCustomer, promoCode, setPromoCode, promotions, combos, submit, onAdmin, theme, message, settings, addCombo }: any) {
+function CustomerView({ products, cart, addToCart, changeCartQuantity, customer, setCustomer, promoCode, setPromoCode, promotions, combos, submit, onAdmin, theme, message, settings, addCombo }: any) {
+  const [catalogQuery, setCatalogQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('Todas');
+  const categories = Array.from(new Set(products.map((p: Product) => p.category).filter(Boolean)));
+  const visibleProducts = products.filter((p: Product) =>
+    (categoryFilter === 'Todas' || p.category === categoryFilter) &&
+    (!catalogQuery.trim() || (p.name + ' ' + p.description + ' ' + p.category).toLowerCase().includes(catalogQuery.toLowerCase()))
+  );
   const subtotal = cart.reduce((s: number, i: OrderItem) => s + number(i.subtotal), 0);
   const quantity = cart.reduce((s: number, i: OrderItem) => s + number(i.quantity), 0);
   const promo = promotions.find((p: any) => p.active && p.code && p.code.toUpperCase() === promoCode.trim().toUpperCase());
@@ -1319,10 +1337,16 @@ function CustomerView({ products, cart, addToCart, customer, setCustomer, promoC
   return <div className={'customer-shell ' + theme}>
     <header className="customer-top"><div className="brand-line"><div className="brand-mark small">DB</div><div><strong>{settings.businessName}</strong><span>Postres artesanales</span></div></div><button className="link-button" onClick={onAdmin}>Administrar</button></header>
     <div className="customer-hero"><p className="eyebrow">CATÁLOGO</p><h1>Hecho en casa, pensado para ti.</h1><p>Elige tus productos y el total se calcula automáticamente.</p></div>
-    <section className="customer-tools"><input placeholder="Buscar producto..." onChange={e => { const value = e.target.value.toLowerCase(); document.querySelectorAll<HTMLElement>('.shop-card').forEach(card => { card.hidden = !card.innerText.toLowerCase().includes(value); }); }} /></section>
-    <section className="customer-products">{products.map((p: Product) => <article className="shop-card" key={p.id}><div className="product-placeholder">{p.name.slice(0, 1)}</div><div className="shop-card-body"><span className="eyebrow">{p.category}</span><h3>{p.name}</h3><p>{p.description}</p><div className="price-row"><strong>{money(p.price)}</strong>{p.oldPrice ? <del>{money(p.oldPrice)}</del> : null}</div><button className="primary wide" onClick={() => addToCart(p)}>Agregar al carrito</button></div></article>)}</section>
+    <section className="customer-tools">
+      <input value={catalogQuery} onChange={e => setCatalogQuery(e.target.value)} placeholder="Buscar producto..." />
+      <div className="catalog-filters">
+        <button className={'small-button ' + (categoryFilter === 'Todas' ? 'active-filter' : '')} onClick={() => setCategoryFilter('Todas')}>Todas</button>
+        {categories.map((category: string) => <button key={category} className={'small-button ' + (categoryFilter === category ? 'active-filter' : '')} onClick={() => setCategoryFilter(category)}>{category}</button>)}
+      </div>
+    </section>
+    <section className="customer-products">{visibleProducts.map((p: Product) => <article className="shop-card" key={p.id}><div className="product-placeholder">{p.name.slice(0, 1)}</div><div className="shop-card-body"><span className="eyebrow">{p.category}</span><h3>{p.name}</h3><p>{p.description}</p><div className="price-row"><strong>{money(p.price)}</strong>{p.oldPrice ? <del>{money(p.oldPrice)}</del> : null}</div><button className="primary wide" onClick={() => addToCart(p)}>Agregar al carrito</button></div></article>)}</section>
     {combos.filter((c: any) => c.active).length ? <section className="customer-products">{combos.filter((c: any) => c.active).map((combo: any) => <article className="shop-card combo-card" key={combo.id}><div className="shop-card-body"><span className="eyebrow">COMBO</span><h3>{combo.name}</h3><p>{combo.productIds.map((id: string) => products.find((p: Product) => p.id === id)?.name).filter(Boolean).join(' + ')}</p><div className="price-row"><strong>{money(combo.price)}</strong></div><button className="primary wide" onClick={() => addCombo(combo)}>Agregar combo</button></div></article>)}</section> : null}
-    <section className="cart-panel"><div><p className="eyebrow">PEDIDO</p><h2>Tu carrito</h2>{cart.length ? cart.map((i: OrderItem) => <div className="list-row" key={i.productId}><div><strong>{i.productName}</strong><span>{i.quantity} × {money(i.unitPrice)}</span></div><b>{money(i.subtotal)}</b></div>) : <Empty text="Agrega productos para empezar." />}<div className="list-row"><span>Subtotal</span><b>{money(subtotal)}</b></div>{discount > 0 ? <div className="list-row"><span>Descuento</span><b>-{money(discount)}</b></div> : null}{deliveryFee > 0 ? <div className="list-row"><span>Delivery</span><b>{money(deliveryFee)}</b></div> : null}<div className="cart-total"><span>Total</span><strong>{money(total)}</strong></div></div><div className="customer-form"><input placeholder="Nombre" value={customer.name} onChange={e => setCustomer({ ...customer, name: e.target.value })} /><input placeholder="Teléfono" value={customer.phone} onChange={e => setCustomer({ ...customer, phone: e.target.value })} /><input placeholder="Dirección" value={customer.address} onChange={e => setCustomer({ ...customer, address: e.target.value })} /><input placeholder="Código promocional" value={promoCode} onChange={e => setPromoCode(e.target.value.toUpperCase())} /><textarea placeholder="Notas o personalización" value={customer.notes} onChange={e => setCustomer({ ...customer, notes: e.target.value })} /><button className="primary wide" disabled={!cart.length} onClick={submit}>Enviar pedido</button>{settings.whatsapp ? <button className="secondary wide" onClick={() => window.open('https://wa.me/' + normalizePhone(settings.whatsapp), '_blank', 'noopener,noreferrer')}>WhatsApp</button> : null}{message ? <div className="notice">{message}</div> : null}</div></section>
+    <section className="cart-panel"><div><p className="eyebrow">PEDIDO</p><h2>Tu carrito</h2>{cart.length ? cart.map((i: OrderItem) => <div className="list-row cart-row" key={i.productId}><div><strong>{i.productName}</strong><span>{money(i.unitPrice)} × {i.quantity} = {money(i.subtotal)}</span></div><div className="cart-controls"><button className="small-button" onClick={() => changeCartQuantity(i.productId, -1)} aria-label={'Quitar una unidad de ' + i.productName}>−</button><b>{i.quantity}</b><button className="small-button" onClick={() => changeCartQuantity(i.productId, 1)} aria-label={'Agregar una unidad de ' + i.productName}>＋</button></div></div>) : <Empty text="Agrega productos para empezar." />}<div className="list-row"><span>Subtotal</span><b>{money(subtotal)}</b></div>{discount > 0 ? <div className="list-row"><span>Descuento</span><b>-{money(discount)}</b></div> : null}{deliveryFee > 0 ? <div className="list-row"><span>Delivery</span><b>{money(deliveryFee)}</b></div> : null}<div className="cart-total"><span>Total</span><strong>{money(total)}</strong></div></div><div className="customer-form"><input placeholder="Nombre" value={customer.name} onChange={e => setCustomer({ ...customer, name: e.target.value })} /><input placeholder="Teléfono" value={customer.phone} onChange={e => setCustomer({ ...customer, phone: e.target.value })} /><input placeholder="Dirección" value={customer.address} onChange={e => setCustomer({ ...customer, address: e.target.value })} /><input placeholder="Código promocional" value={promoCode} onChange={e => setPromoCode(e.target.value.toUpperCase())} /><textarea placeholder="Notas o personalización" value={customer.notes} onChange={e => setCustomer({ ...customer, notes: e.target.value })} /><button className="primary wide" disabled={!cart.length} onClick={submit}>Enviar pedido</button>{settings.whatsapp ? <button className="secondary wide" onClick={() => window.open('https://wa.me/' + normalizePhone(settings.whatsapp), '_blank', 'noopener,noreferrer')}>WhatsApp</button> : null}{message ? <div className="notice">{message}</div> : null}</div></section>
   </div>;
 }
 
