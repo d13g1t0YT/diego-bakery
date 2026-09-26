@@ -1,20 +1,19 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Capacitor } from '@capacitor/core';
-import { Preferences } from '@capacitor/preferences';
-import { BiometricAuth } from '@aparajita/capacitor-biometric-auth';
-import { LocalNotifications } from '@capacitor/local-notifications';
-import { apiConfigured, getCloudState, getOrders, getProducts, getPublicOrders, login, putCloudState, submitPublicOrder, updatePublicOrderStatus, uploadBackup } from './api';
-import { BusinessState, Debt, Ingredient, LocalAdmin, MoneyMove, MoneyMoveType, Order, OrderItem, OrderStatus, Product, defaultState, money, uid } from './types';
+import { Component, type ErrorInfo, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { apiConfigured, getCloudState, getPublicOrders, login, pingHealth, putCloudState, submitPublicOrder, updatePublicOrderStatus, uploadBackup } from './api';
+import { calculateRecipeCost, type BusinessState, type Customer, type Debt, type Ingredient, type LocalAdmin, type MoneyMove, type MoneyMoveType, type Order, type OrderItem, type OrderStatus, type Product, type Recipe, defaultState, money, uid } from './types';
 import { CashRegisterView, CombosView, CustomersView, LoyaltyView, NotificationsView, PromotionsView, RecipesView, ServicesView, SuppliersView } from './BusinessFeatures';
 import { csvDownload, downloadBackup, loadState, restoreBackup, saveState } from './storage';
 
 type Mode = 'admin' | 'cliente';
-type Section = 'inicio' | 'pedidos' | 'productos' | 'ingredientes' | 'recetas' | 'proveedores' | 'clientes' | 'finanzas' | 'caja' | 'deudas' | 'perdidas' | 'promociones' | 'combinaciones' | 'lealtad' | 'notificaciones' | 'servicios' | 'reportes' | 'ajustes';
+type Section =
+  | 'inicio' | 'pedidos' | 'productos' | 'ingredientes' | 'recetas' | 'proveedores' | 'clientes'
+  | 'finanzas' | 'caja' | 'deudas' | 'perdidas' | 'promociones' | 'combinaciones' | 'lealtad'
+  | 'notificaciones' | 'servicios' | 'reportes' | 'ajustes';
 
 const STATUS_LABELS: Record<OrderStatus, string> = {
   pendiente: 'Pendiente',
-  esperando_confirmacion: 'Esperando confirmación',
-  comprando_ingredientes: 'Comprando ingredientes',
+  esperando_confirmacion: 'Confirmación',
+  comprando_ingredientes: 'Comprando',
   preparando: 'Preparando',
   lista: 'Lista',
   por_entregar: 'Por entregar',
@@ -23,6 +22,16 @@ const STATUS_LABELS: Record<OrderStatus, string> = {
   cancelada: 'Cancelada',
   archivada: 'Archivada'
 };
+
+const STATUS_FLOW: OrderStatus[] = [
+  'pendiente',
+  'esperando_confirmacion',
+  'comprando_ingredientes',
+  'preparando',
+  'lista',
+  'por_entregar',
+  'entregada'
+];
 
 const MOVE_LABELS: Record<MoneyMoveType, string> = {
   venta: 'Venta',
@@ -34,232 +43,442 @@ const MOVE_LABELS: Record<MoneyMoveType, string> = {
   ajuste: 'Ajuste'
 };
 
+const NAV: Array<{ id: Section; label: string; icon: string; badge?: boolean }> = [
+  { id: 'inicio', label: 'Inicio', icon: '⌂' },
+  { id: 'pedidos', label: 'Pedidos', icon: '✓', badge: true },
+  { id: 'productos', label: 'Productos', icon: '▣' },
+  { id: 'ingredientes', label: 'Inventario', icon: '◫' },
+  { id: 'recetas', label: 'Recetas', icon: '✦' },
+  { id: 'clientes', label: 'Clientes', icon: '◉' },
+  { id: 'proveedores', label: 'Proveedores', icon: '⇄' },
+  { id: 'finanzas', label: 'Finanzas', icon: 'S/' },
+  { id: 'caja', label: 'Caja', icon: '▤' },
+  { id: 'deudas', label: 'Deudas', icon: '!' },
+  { id: 'perdidas', label: 'Pérdidas', icon: '△' },
+  { id: 'promociones', label: 'Promos', icon: '%' },
+  { id: 'combinaciones', label: 'Combos', icon: '+' },
+  { id: 'lealtad', label: 'Lealtad', icon: '★' },
+  { id: 'notificaciones', label: 'Avisos', icon: '●' },
+  { id: 'servicios', label: 'Servicios', icon: '⚙' },
+  { id: 'reportes', label: 'Reportes', icon: '▥' },
+  { id: 'ajustes', label: 'Ajustes', icon: '☰' }
+];
+
+const sectionTitle = (section: Section): string => ({
+  inicio: 'Resumen del negocio',
+  pedidos: 'Pedidos',
+  productos: 'Productos',
+  ingredientes: 'Inventario',
+  recetas: 'Recetas y costos',
+  proveedores: 'Proveedores',
+  clientes: 'Clientes',
+  finanzas: 'Finanzas',
+  caja: 'Caja',
+  deudas: 'Cuentas pendientes',
+  perdidas: 'Pérdidas y desperdicios',
+  promociones: 'Promociones',
+  combinaciones: 'Combos',
+  lealtad: 'Lealtad',
+  notificaciones: 'Avisos',
+  servicios: 'Servicios',
+  reportes: 'Reportes',
+  ajustes: 'Ajustes'
+}[section]);
+
+const number = (value: unknown, fallback = 0): number => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const dateKey = (value = new Date()): string => value.toISOString().slice(0, 10);
+
+const formatDate = (value: string): string => {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' });
+};
+
+const completed = (status: OrderStatus): boolean => ['entregada', 'cancelada', 'archivada'].includes(status);
+
+const nextStatus = (status: OrderStatus): OrderStatus | null => {
+  if (status === 'no_entregada' || status === 'cancelada' || status === 'archivada') return null;
+  const idx = STATUS_FLOW.indexOf(status);
+  return idx >= 0 && idx < STATUS_FLOW.length - 1 ? STATUS_FLOW[idx + 1] : null;
+};
+
+const normalizePhone = (value: string): string => value.replace(/\D/g, '');
+
 async function hashPin(pin: string): Promise<string> {
   const data = new TextEncoder().encode(pin);
   const hash = await crypto.subtle.digest('SHA-256', data);
   return Array.from(new Uint8Array(hash)).map(v => v.toString(16).padStart(2, '0')).join('');
 }
 
-async function readNativeToken(): Promise<string | undefined> {
-  try {
-    if (Capacitor.isNativePlatform()) {
-      return (await Preferences.get({ key: 'diego-bakery-token' })).value ?? undefined;
-    }
-  } catch { /* native storage can be unavailable in browser tests */ }
-  return localStorage.getItem('diego-bakery-token') ?? undefined;
+function ErrorFallback({ error }: { error: Error }) {
+  return (
+    <div className="fatal-screen">
+      <div className="fatal-card">
+        <div className="brand-mark">DB</div>
+        <p className="eyebrow">DIEGO BAKERY</p>
+        <h1>La pantalla encontró un error recuperable.</h1>
+        <p className="muted">Los datos locales no se borraron. Recarga la aplicación para continuar.</p>
+        <div className="fatal-actions">
+          <button className="primary" onClick={() => window.location.reload()}>Recargar</button>
+          <details><summary>Ver detalle técnico</summary><pre>{error.message}</pre></details>
+        </div>
+      </div>
+    </div>
+  );
 }
 
-async function writeToken(token: string): Promise<void> {
-  try {
-    if (Capacitor.isNativePlatform()) await Preferences.set({ key: 'diego-bakery-token', value: token });
-    else localStorage.setItem('diego-bakery-token', token);
-  } catch {
-    localStorage.setItem('diego-bakery-token', token);
+class AppErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
   }
-}
 
-async function notifyNative(title: string, body: string): Promise<void> {
-  if (!Capacitor.isNativePlatform()) return;
-  try {
-    const permission = await LocalNotifications.checkPermissions();
-    if (permission.display !== 'granted') {
-      const requested = await LocalNotifications.requestPermissions();
-      if (requested.display !== 'granted') return;
-    }
-    await LocalNotifications.schedule({
-      notifications: [{
-        id: Math.floor(Date.now() % 2147483000),
-        title,
-        body,
-        schedule: { at: new Date(Date.now() + 1000), allowWhileIdle: false },
-        autoCancel: true,
-        ongoing: false,
-        isExactNotification: false
-      }]
-    });
-  } catch {
-    // Notifications are optional and must never block business operations.
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('Diego Bakery render error', error, info);
   }
-}
 
-async function clearToken(): Promise<void> {
-  try {
-    if (Capacitor.isNativePlatform()) await Preferences.remove({ key: 'diego-bakery-token' });
-  } finally {
-    localStorage.removeItem('diego-bakery-token');
+  render() {
+    return this.state.error ? <ErrorFallback error={this.state.error} /> : this.props.children;
   }
 }
 
 export function App() {
+  return <AppErrorBoundary><AppInner /></AppErrorBoundary>;
+}
+
+function AppInner() {
   const [state, setState] = useState<BusinessState | null>(null);
+  const stateRef = useRef<BusinessState | null>(null);
+  const syncTimer = useRef<number | undefined>(undefined);
+  const publicSyncBusy = useRef(false);
+  const saving = useRef(false);
   const [mode, setMode] = useState<Mode>('admin');
   const [section, setSection] = useState<Section>('inicio');
-  const [logged, setLogged] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [ready, setReady] = useState(false);
+  const [online, setOnline] = useState(typeof navigator === 'undefined' ? true : navigator.onLine);
   const [message, setMessage] = useState('');
-  const [online, setOnline] = useState(navigator.onLine);
-  const [biometryAvailable, setBiometryAvailable] = useState(false);
+  const [syncState, setSyncState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [loginPhone, setLoginPhone] = useState('');
   const [loginPin, setLoginPin] = useState('');
   const [setupOpen, setSetupOpen] = useState(false);
-  const [setupName, setSetupName] = useState('');
+  const [setupName, setSetupName] = useState('Administrador');
   const [setupPhone, setSetupPhone] = useState('');
   const [setupPin, setSetupPin] = useState('');
+  const [globalSearch, setGlobalSearch] = useState('');
   const [cart, setCart] = useState<OrderItem[]>([]);
-  const [customer, setCustomer] = useState({ name: '', phone: '', address: '', notes: '' });
+  const [customerDraft, setCustomerDraft] = useState({ name: '', phone: '', address: '', notes: '' });
   const [promoCode, setPromoCode] = useState('');
 
   useEffect(() => {
     void (async () => {
       const loaded = await loadState();
-      const token = await readNativeToken();
-      const restored = token && loaded.admin
-        ? { ...loaded, admin: { ...loaded.admin, token } }
-        : loaded;
-
-      setState(restored);
-      if (token && restored.admin) {
-        setLogged(true);
-        setBiometryAvailable(true);
-      }
-      setLoading(false);
+      stateRef.current = loaded;
+      setState(loaded);
+      setLoginPhone(loaded.admin?.phone ?? '');
+      setReady(true);
     })();
   }, []);
 
   useEffect(() => {
-    const on = () => {
+    if (!state) return;
+    stateRef.current = state;
+    if (saving.current) return;
+    saving.current = true;
+    void saveState({ ...state, lastLocalChangeAt: new Date().toISOString() })
+      .then(() => setSyncState(prev => prev === 'error' ? prev : 'saved'))
+      .catch(() => setSyncState('error'))
+      .finally(() => { saving.current = false; });
+  }, [state]);
+
+  useEffect(() => {
+    const onOnline = () => {
       setOnline(true);
-      void refreshFromServer();
+      setMessage('Conexión recuperada.');
     };
-    const off = () => setOnline(false);
-    window.addEventListener('online', on);
-    window.addEventListener('offline', off);
+    const onOffline = () => {
+      setOnline(false);
+      setMessage('Sin conexión. Los datos siguen disponibles y se sincronizarán después.');
+    };
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
     return () => {
-      window.removeEventListener('online', on);
-      window.removeEventListener('offline', off);
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
     };
-  }, [state?.admin?.token]);
+  }, []);
+
+  useEffect(() => {
+    const onError = (event: ErrorEvent) => {
+      console.error('Diego Bakery runtime error', event.error || event.message);
+      setMessage('La app detectó un error de ejecución. Los datos están protegidos; prueba recargando.');
+    };
+    const onRejection = (event: PromiseRejectionEvent) => {
+      console.error('Diego Bakery unhandled rejection', event.reason);
+      setMessage('Una operación no terminó. El estado local sigue protegido.');
+    };
+    window.addEventListener('error', onError);
+    window.addEventListener('unhandledrejection', onRejection);
+    return () => {
+      window.removeEventListener('error', onError);
+      window.removeEventListener('unhandledrejection', onRejection);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!state?.admin?.token || !online) return;
+    scheduleCloudSync();
+    const interval = window.setInterval(() => {
+      void flushCloudSync();
+    }, 15000);
+    return () => {
+      window.clearInterval(interval);
+      if (syncTimer.current) window.clearTimeout(syncTimer.current);
+    };
+  }, [state?.admin?.token, online]);
+
+  useEffect(() => {
+    if (!online) return;
+    void syncPublicOrders();
+    const interval = window.setInterval(() => { void syncPublicOrders(); }, 12000);
+    return () => window.clearInterval(interval);
+  }, [online]);
 
   useEffect(() => {
     if (!state) return;
-    void saveState(state);
-  }, [state]);
+    const low = state.ingredients.filter(i => i.stock <= i.minStock && i.minStock > 0);
+    if (!low.length) return;
 
-  useEffect(() => {
-    if (!state?.settings.autoBackup || !logged || !online || !state.admin?.token) return;
-    const timer = window.setTimeout(() => {
-      void Promise.all([
-        putCloudState(state.admin!.token!, state),
-        uploadBackup(state.admin!.token!, state)
-      ]).catch(() => undefined);
-    }, 1500);
-    return () => window.clearTimeout(timer);
-  }, [state, logged, online]);
+    setState(prev => {
+      if (!prev) return prev;
+      const today = dateKey();
+      const existing = new Set(prev.notifications
+        .filter(n => n.type === 'stock' && n.createdAt.slice(0, 10) === today)
+        .map(n => n.message));
+      const generated = low
+        .filter(i => !existing.has('Stock bajo: ' + i.name))
+        .map(i => ({
+          id: uid('not'),
+          type: 'stock' as const,
+          title: 'Stock bajo',
+          message: 'Stock bajo: ' + i.name,
+          read: false,
+          createdAt: new Date().toISOString()
+        }));
+      return generated.length ? { ...prev, notifications: generated.concat(prev.notifications) } : prev;
+    });
+  }, [state?.ingredients]);
 
   const products = state?.products ?? [];
   const activeProducts = products.filter(p => p.active);
-  const cashBalance = useMemo(() => {
-    if (!state) return 0;
-    return state.money.reduce((sum, m) => {
-      if (m.method && m.method !== 'efectivo') return sum;
-      if (m.type === 'venta' || m.type === 'inversion' || m.type === 'cobro_deuda') return sum + m.amount;
-      return sum - m.amount;
+  const pendingOrders = state?.orders.filter(o => !completed(o.status)).length ?? 0;
+  const unread = state?.notifications.filter(n => !n.read).length ?? 0;
+  const today = dateKey();
+  const monthPrefix = today.slice(0, 7);
+
+  const derived = useMemo(() => {
+    if (!state) {
+      return {
+        sales: 0, expenses: 0, investments: 0, cash: 0, todaySales: 0, monthSales: 0,
+        todayOrders: 0, pending: 0, inventoryValue: 0, receivable: 0, payable: 0,
+        completedRevenue: 0, averageTicket: 0, estimatedProfit: 0, lowStock: [] as Ingredient[],
+        topProducts: [] as Array<{ name: string; quantity: number; revenue: number }>
+      };
+    }
+
+    const inflow = (m: MoneyMove) => ['venta', 'inversion', 'cobro_deuda'].includes(m.type);
+    const outflow = (m: MoneyMove) => ['gasto', 'retiro', 'pago_deuda'].includes(m.type);
+
+    const sales = state.money.filter(m => m.type === 'venta').reduce((s, m) => s + number(m.amount), 0);
+    const expenses = state.money.filter(m => m.type === 'gasto').reduce((s, m) => s + number(m.amount), 0);
+    const investments = state.money.filter(m => m.type === 'inversion').reduce((s, m) => s + number(m.amount), 0);
+    const cash = state.money.reduce((s, m) => {
+      if (!m.method || m.method === 'efectivo') {
+        if (inflow(m)) return s + number(m.amount);
+        if (outflow(m)) return s - number(m.amount);
+      }
+      return s;
     }, 0);
-  }, [state]);
 
-  const totalSales = useMemo(() => state?.money.filter(m => m.type === 'venta').reduce((s, m) => s + m.amount, 0) ?? 0, [state]);
-  const totalExpenses = useMemo(() => state?.money.filter(m => m.type === 'gasto').reduce((s, m) => s + m.amount, 0) ?? 0, [state]);
-  const pendingOrders = state?.orders.filter(o => !['entregada', 'cancelada', 'archivada'].includes(o.status)).length ?? 0;
-  const unreadNotifications = state?.notifications.filter(n => !n.read).length ?? 0;
+    const todaySales = state.money
+      .filter(m => m.type === 'venta' && m.date.slice(0, 10) === today)
+      .reduce((s, m) => s + number(m.amount), 0);
+    const monthSales = state.money
+      .filter(m => m.type === 'venta' && m.date.slice(0, 7) === monthPrefix)
+      .reduce((s, m) => s + number(m.amount), 0);
 
-  async function refreshFromServer(tokenOverride?: string) {
-    const token = tokenOverride ?? state?.admin?.token;
-    if (!token || !online) return;
+    const completedOrders = state.orders.filter(o => o.status === 'entregada');
+    const completedRevenue = completedOrders.reduce((s, o) => s + number(o.total), 0);
+    const todayOrders = state.orders.filter(o => o.createdAt.slice(0, 10) === today).length;
+    const inventoryValue = state.ingredients.reduce((s, i) => s + number(i.stock) * number(i.unitCost), 0);
+    const receivable = state.debts.filter(d => d.type === 'cobrar' && !d.paid).reduce((s, d) => s + number(d.amount), 0);
+    const payable = state.debts.filter(d => d.type === 'pagar' && !d.paid).reduce((s, d) => s + number(d.amount), 0);
+    const averageTicket = completedOrders.length ? completedRevenue / completedOrders.length : 0;
+    const inventoryGrossMargin = products.reduce((s, p) => s + Math.max(0, number(p.price) - number(p.cost)) * Math.max(0, number(p.stock)), 0);
+    const estimatedProfit = sales - expenses + inventoryGrossMargin;
 
+    const counts = new Map<string, { quantity: number; revenue: number }>();
+    for (const order of state.orders) {
+      if (order.status === 'cancelada') continue;
+      for (const item of order.items) {
+        const current = counts.get(item.productName) || { quantity: 0, revenue: 0 };
+        current.quantity += number(item.quantity);
+        current.revenue += number(item.subtotal || number(item.unitPrice) * number(item.quantity));
+        counts.set(item.productName, current);
+      }
+    }
+
+    return {
+      sales, expenses, investments, cash, todaySales, monthSales, todayOrders, pending: pendingOrders,
+      inventoryValue, receivable, payable, completedRevenue, averageTicket, estimatedProfit,
+      lowStock: state.ingredients.filter(i => i.stock <= i.minStock && i.minStock > 0),
+      topProducts: Array.from(counts.entries())
+        .map(([name, value]) => ({ name, ...value }))
+        .sort((a, b) => b.revenue - a.revenue)
+        .slice(0, 5)
+    };
+  }, [state, today, monthPrefix, pendingOrders]);
+
+  function updateState(mutator: (current: BusinessState) => BusinessState) {
+    setState(prev => prev ? { ...mutator(prev), lastLocalChangeAt: new Date().toISOString() } : prev);
+    setSyncState('saving');
+  }
+
+  function scheduleCloudSync() {
+    if (syncTimer.current) window.clearTimeout(syncTimer.current);
+    syncTimer.current = window.setTimeout(() => { void flushCloudSync(); }, 1200);
+  }
+
+  async function flushCloudSync() {
+    const snapshot = stateRef.current;
+    const token = snapshot?.admin?.token;
+    if (!snapshot || !token || !online || !apiConfigured()) return;
+
+    setSyncState('saving');
     try {
-      const [remoteStateResult, remotePublicOrders] = await Promise.allSettled([
-        getCloudState(token),
-        getPublicOrders(token)
-      ]);
-
-      setState(prev => {
-        if (!prev) return prev;
-
-        let next = prev;
-
-        if (remoteStateResult.status === 'fulfilled') {
-          next = {
-            ...remoteStateResult.value,
-            admin: prev.admin,
-            lastSyncAt: new Date().toISOString()
-          };
-        } else {
-          next = { ...next, lastSyncAt: new Date().toISOString() };
-        }
-
-        if (remotePublicOrders.status === 'fulfilled') {
-          const mapped = remotePublicOrders.value.map(mapPublicOrder);
-          const byRemoteId = new Map(mapped.map(o => [o.remoteId ?? o.id, o]));
-          const mergedExisting = next.orders.map(localOrder => {
-            const remoteId = localOrder.remoteId;
-            const remoteOrder = remoteId ? byRemoteId.get(remoteId) : undefined;
-            return remoteOrder
-              ? { ...localOrder, ...remoteOrder, id: localOrder.id, remoteId }
-              : localOrder;
-          });
-          const knownRemoteIds = new Set(
-            mergedExisting.map(o => o.remoteId).filter((id): id is string => Boolean(id))
-          );
-          const newRemoteOrders = mapped.filter(o => {
-            const remoteId = o.remoteId ?? o.id;
-            return !knownRemoteIds.has(remoteId);
-          });
-
-          next = {
-            ...next,
-            orders: mergedExisting.concat(newRemoteOrders)
-          };
-        }
-
-        return next;
-      });
-
-      setMessage('Sincronización completada');
-    } catch {
-      setMessage('No se pudo sincronizar; los datos locales siguen disponibles.');
+      await putCloudState(token, snapshot);
+      if (snapshot.settings.autoBackup) await uploadBackup(token, snapshot);
+      setState(prev => prev ? { ...prev, lastSyncAt: new Date().toISOString() } : prev);
+      setSyncState('saved');
+      setMessage('Todo guardado y sincronizado.');
+    } catch (error) {
+      console.error(error);
+      setSyncState('error');
+      setMessage('No se pudo sincronizar ahora. Se reintentará automáticamente.');
     }
   }
 
-  function mapRemoteProduct(p: any): Product {
+  async function syncPublicOrders() {
+    if (publicSyncBusy.current || !online || !apiConfigured()) return;
+    const snapshot = stateRef.current;
+    if (!snapshot) return;
+    const pending = snapshot.orders.filter(o => o.source === 'cliente' && !o.remoteId);
+    if (!pending.length) return;
+    publicSyncBusy.current = true;
+    try {
+      for (const order of pending.slice(0, 5)) {
+        try {
+          const result = await submitPublicOrder(order);
+          updateState(current => ({
+            ...current,
+            orders: current.orders.map(item => item.id === order.id ? { ...item, remoteId: result.id } : item)
+          }));
+        } catch {
+          // Retry on the next cycle.
+        }
+      }
+    } finally {
+      publicSyncBusy.current = false;
+    }
+  }
+
+  async function refreshFromServer() {
+    const token = stateRef.current?.admin?.token;
+    if (!token || !online || !apiConfigured()) {
+      setMessage(online ? 'Primero configura el acceso en línea.' : 'Estás sin conexión.');
+      return;
+    }
+
+    setSyncState('saving');
+    try {
+      const [remoteState, publicOrders] = await Promise.all([getCloudState(token), getPublicOrders(token)]);
+      const local = stateRef.current;
+      if (!local) return;
+      const localIsNewer = Boolean(local.lastLocalChangeAt && (!local.lastSyncAt || local.lastLocalChangeAt > local.lastSyncAt));
+      const merged = localIsNewer ? mergeStatePreservingLocal(local, remoteState) : mergeStateFromCloud(local, remoteState);
+
+      const mapped = publicOrders.map(mapPublicOrder);
+      const byRemote = new Map(mapped.map(o => [o.remoteId || o.id, o]));
+      const mergedOrders = merged.orders.map(order => {
+        const remote = order.remoteId ? byRemote.get(order.remoteId) : undefined;
+        return remote ? { ...order, ...remote, id: order.id, remoteId: order.remoteId } : order;
+      });
+      const known = new Set(mergedOrders.map(o => o.remoteId).filter(Boolean));
+      mergedOrders.push(...mapped.filter(o => !known.has(o.remoteId || o.id)));
+
+      const next = { ...merged, orders: mergedOrders, admin: local.admin, lastSyncAt: new Date().toISOString() };
+      stateRef.current = next;
+      setState(next);
+      setSyncState('saved');
+      setMessage(localIsNewer ? 'Cambios locales guardados y nube actualizada.' : 'Datos actualizados desde la nube.');
+    } catch (error) {
+      console.error(error);
+      setSyncState('error');
+      setMessage('No se pudo actualizar desde la nube. Se conservaron tus datos.');
+    }
+  }
+
+  function mergeStateFromCloud(local: BusinessState, remote: BusinessState): BusinessState {
     return {
-      id: String(p.id),
-      name: String(p.nombre ?? ''),
-      description: String(p.descripcion ?? ''),
-      category: 'Sin categoría',
-      categories: [],
-      price: Number(p.precio_venta ?? 0),
-      cost: 0,
-      stock: 0,
-      active: Boolean(p.activo ?? true),
-      seasonal: false,
-      tags: [],
-      flavors: [],
-      sizes: [],
-      presentation: ''
+      ...remote,
+      admin: local.admin,
+      settings: { ...remote.settings, ...local.settings },
+      notifications: remote.notifications.length ? remote.notifications : local.notifications
+    };
+  }
+
+  function mergeStatePreservingLocal(local: BusinessState, remote: BusinessState): BusinessState {
+    const merge = <T extends { id: string }>(remoteItems: T[], localItems: T[]) => {
+      const localIds = new Set(localItems.map(item => item.id));
+      return remoteItems.concat(localItems.filter(item => !localIds.has(item.id)));
+    };
+    return {
+      ...remote,
+      ...local,
+      products: merge(remote.products, local.products),
+      ingredients: merge(remote.ingredients, local.ingredients),
+      recipes: merge(remote.recipes, local.recipes),
+      suppliers: merge(remote.suppliers, local.suppliers),
+      customers: merge(remote.customers, local.customers),
+      promotions: merge(remote.promotions, local.promotions),
+      combos: merge(remote.combos, local.combos),
+      loyaltyRewards: merge(remote.loyaltyRewards, local.loyaltyRewards),
+      services: merge(remote.services, local.services),
+      orders: merge(remote.orders, local.orders),
+      money: merge(remote.money, local.money),
+      debts: merge(remote.debts, local.debts),
+      losses: merge(remote.losses, local.losses),
+      notifications: merge(remote.notifications, local.notifications),
+      reviews: merge(remote.reviews, local.reviews),
+      admin: local.admin,
+      settings: local.settings
     };
   }
 
   function mapPublicOrder(o: any): Order {
-    const rawItems = Array.isArray(o.items) ? o.items : [];
-    const items: OrderItem[] = rawItems.map((item: any) => ({
+    const items: OrderItem[] = Array.isArray(o.items) ? o.items.map((item: any) => ({
       productId: String(item.productId ?? item.product_id ?? ''),
       productName: String(item.productName ?? item.product_name ?? 'Producto'),
-      quantity: Math.max(1, Number(item.quantity ?? 1)),
-      unitPrice: Math.max(0, Number(item.unitPrice ?? item.unit_price ?? 0)),
-      cost: Math.max(0, Number(item.cost ?? 0)),
-      subtotal: Math.max(0, Number(item.subtotal ?? 0)),
-      customizations: typeof item.customizations === 'object' && item.customizations ? item.customizations : undefined
-    }));
+      quantity: Math.max(1, number(item.quantity, 1)),
+      unitPrice: Math.max(0, number(item.unitPrice ?? item.unit_price)),
+      cost: Math.max(0, number(item.cost)),
+      subtotal: Math.max(0, number(item.subtotal)),
+      customizations: item.customizations && typeof item.customizations === 'object' ? item.customizations : undefined
+    })) : [];
+
     return {
       id: String(o.id),
       remoteId: String(o.id),
@@ -269,337 +488,202 @@ export function App() {
       address: o.direccion ? String(o.direccion) : undefined,
       notes: o.notas ? String(o.notas) : undefined,
       items,
-      subtotal: Number(o.subtotal ?? 0),
-      discount: Number(o.descuento ?? 0),
-      total: Number(o.total ?? 0),
+      subtotal: number(o.subtotal),
+      discount: number(o.descuento),
+      total: number(o.total),
       status: STATUS_LABELS[o.estado as OrderStatus] ? o.estado as OrderStatus : 'pendiente',
       paid: 0,
       source: 'cliente'
     };
   }
 
-  function mapRemoteOrder(o: any): Order {
-    return {
-      id: String(o.id),
-      createdAt: new Date(o.fecha_pedido ?? Date.now()).toISOString(),
-      customerName: [o.cliente_nombre, o.cliente_apellido].filter(Boolean).join(' ') || 'Cliente',
-      customerPhone: '',
-      items: [],
-      subtotal: 0,
-      discount: 0,
-      total: 0,
-      status: (STATUS_LABELS[o.estado as OrderStatus] ? o.estado : 'pendiente') as OrderStatus,
-      paid: 0,
-      source: 'admin'
-    };
-  }
-
   async function doLogin() {
     if (!state) return;
-    setMessage('');
-    if (apiConfigured() && loginPhone && loginPin && online) {
+    const phone = normalizePhone(loginPhone);
+    const pin = loginPin.replace(/\D/g, '');
+    if (phone.length < 6 || pin.length < 4) {
+      setMessage('Ingresa un teléfono válido y un PIN de al menos 4 dígitos.');
+      return;
+    }
+
+    if (apiConfigured() && online) {
       try {
-        const result = await login(loginPhone, loginPin);
+        const result = await login(phone, pin);
         const admin: LocalAdmin = {
-          name: `${result.usuario.nombre} ${result.usuario.apellido}`.trim(),
-          phone: loginPhone,
-          pinHash: await hashPin(loginPin),
+          name: (result.usuario.nombre + ' ' + result.usuario.apellido).trim(),
+          phone,
+          pinHash: await hashPin(pin),
           token: result.token
         };
-        setState(prev => prev ? { ...prev, admin } : prev);
-        await writeToken(result.token);
+        updateState(current => ({ ...current, admin }));
         setLogged(true);
-        await refreshFromServer(result.token);
+        setMessage('Acceso correcto. Sincronizando…');
+        window.setTimeout(() => { void refreshFromServer(); }, 0);
         return;
-      } catch {
-        setMessage('Inicio en línea no disponible. Intentando acceso local…');
+      } catch (error) {
+        console.error(error);
+        setMessage('No se pudo acceder en línea. Probando la cuenta guardada en este dispositivo.');
       }
     }
 
-    if (!state.admin) {
-      setMessage('Este dispositivo aún no tiene un administrador local configurado.');
-      setSetupOpen(true);
+    const admin = state.admin;
+    if (!admin || admin.phone !== phone || admin.pinHash !== await hashPin(pin)) {
+      setMessage('Teléfono o PIN incorrectos. Puedes configurar este dispositivo.');
       return;
     }
 
-    const valid = state.admin.phone === loginPhone && state.admin.pinHash === await hashPin(loginPin);
-    if (!valid) {
-      setMessage('Teléfono o PIN incorrectos.');
-      return;
-    }
     setLogged(true);
+    setMessage('Acceso local correcto.');
   }
 
-  async function setupLocalAdmin() {
-    if (!state || !setupName.trim() || !setupPhone.trim() || !/^\d{4,12}$/.test(setupPin)) {
-      setMessage('Completa nombre, teléfono y un PIN de 4 a 12 dígitos.');
-      return;
-    }
-    const admin: LocalAdmin = {
-      name: setupName.trim(),
-      phone: setupPhone.trim(),
-      pinHash: await hashPin(setupPin)
-    };
-    setState({ ...state, admin });
-    setLoginPhone(admin.phone);
-    setSetupOpen(false);
-    setLogged(true);
-    setMessage('Administrador local configurado.');
-  }
-
-  async function biometricLogin() {
-    if (!state?.admin) return;
-    try {
-      const result = await BiometricAuth.checkBiometry();
-      if (!result.isAvailable && !result.deviceIsSecure) {
-        setMessage('Este dispositivo no tiene una biometría o credencial disponible.');
+  function setupLocalAdmin() {
+    void (async () => {
+      const phone = normalizePhone(setupPhone);
+      const pin = setupPin.replace(/\D/g, '');
+      if (!setupName.trim() || phone.length < 6 || pin.length < 4) {
+        setMessage('Completa nombre, teléfono y un PIN de 4 a 12 dígitos.');
         return;
       }
-      await BiometricAuth.authenticate({
-        reason: 'Desbloquear Diego Bakery',
-        allowDeviceCredential: true,
-        androidTitle: 'Diego Bakery',
-        androidSubtitle: 'Confirma tu identidad para entrar',
-        androidConfirmationRequired: false
-      });
+      const admin: LocalAdmin = {
+        name: setupName.trim(),
+        phone,
+        pinHash: await hashPin(pin)
+      };
+      updateState(current => ({ ...current, admin }));
+      setLoginPhone(phone);
+      setSetupOpen(false);
       setLogged(true);
-      setMessage('Acceso mediante biometría.');
-    } catch {
-      setMessage('La autenticación biométrica fue cancelada o no estuvo disponible.');
-    }
+      setMessage('Dispositivo configurado. Tus datos ya se guardan automáticamente.');
+    })();
   }
 
-  function logout() {
-    setLogged(false);
-    setState(prev => prev && prev.admin
-      ? { ...prev, admin: { ...prev.admin, token: undefined } }
-      : prev
-    );
-    void clearToken();
-  }
-
-  function updateSettings(patch: Partial<BusinessState['settings']>) {
-    setState(prev => prev ? { ...prev, settings: { ...prev.settings, ...patch } } : prev);
-  }
+  const [logged, setLogged] = useState(false);
 
   function addMoney(move: Omit<MoneyMove, 'id' | 'date'>) {
-    setState(prev => prev ? { ...prev, money: [{ ...move, id: uid('mov'), date: new Date().toISOString() }, ...prev.money] } : prev);
+    updateState(current => ({
+      ...current,
+      money: [{ ...move, id: uid('mov'), date: new Date().toISOString() }, ...current.money]
+    }));
   }
 
   function createProduct(form: { name: string; category: string; price: number; cost: number; stock: number; description: string }) {
-    const product: Product = {
-      id: uid('prd'),
-      name: form.name.trim(),
-      description: form.description.trim(),
-      category: form.category.trim() || 'General',
-      categories: [form.category.trim() || 'General'],
-      price: form.price,
-      cost: form.cost,
-      stock: form.stock,
-      active: true,
-      seasonal: false,
-      tags: [],
-      flavors: [],
-      sizes: [],
-      presentation: ''
-    };
-    setState(prev => prev ? { ...prev, products: [product, ...prev.products] } : prev);
+    updateState(current => ({
+      ...current,
+      products: [{
+        id: uid('prd'),
+        name: form.name.trim(),
+        description: form.description.trim(),
+        category: form.category.trim() || 'General',
+        categories: [form.category.trim() || 'General'],
+        price: Math.max(0, number(form.price)),
+        cost: Math.max(0, number(form.cost)),
+        stock: Math.max(0, number(form.stock)),
+        active: true,
+        seasonal: false,
+        tags: [],
+        flavors: [],
+        sizes: [],
+        presentation: ''
+      }, ...current.products]
+    }));
   }
 
   function updateProduct(id: string, patch: Partial<Product>) {
-    setState(prev => prev ? {
-      ...prev,
-      products: prev.products.map(p => p.id === id ? { ...p, ...patch } : p)
-    } : prev);
+    updateState(current => ({
+      ...current,
+      products: current.products.map(product => product.id === id ? { ...product, ...patch } : product)
+    }));
   }
 
   function addIngredient(form: Omit<Ingredient, 'id'>) {
-    setState(prev => prev ? { ...prev, ingredients: [{ ...form, id: uid('ing') }, ...prev.ingredients] } : prev);
+    updateState(current => ({
+      ...current,
+      ingredients: [{ ...form, id: uid('ing'), unitCost: number(form.unitCost), stock: Math.max(0, number(form.stock)), minStock: Math.max(0, number(form.minStock)) }, ...current.ingredients]
+    }));
   }
 
   function changeStock(id: string, delta: number) {
-    setState(prev => prev ? {
-      ...prev,
-      ingredients: prev.ingredients.map(i => i.id === id ? { ...i, stock: Math.max(0, i.stock + delta) } : i)
-    } : prev);
+    updateState(current => ({
+      ...current,
+      ingredients: current.ingredients.map(item => item.id === id ? { ...item, stock: Math.max(0, Number((item.stock + delta).toFixed(4))) } : item)
+    }));
   }
 
   function addOrder(order: Order) {
-    setState(prev => {
-      if (!prev) return prev;
-      const saleMove: MoneyMove | null = order.paid > 0 ? {
+    updateState(current => ({
+      ...current,
+      orders: [order, ...current.orders],
+      money: order.paid > 0 ? [{
         id: uid('mov'),
         date: new Date().toISOString(),
         type: 'venta',
         amount: order.paid,
-        description: `Pago del pedido ${order.id.slice(-6)}`,
-        category: order.paymentMethod || 'venta'
-      } : null;
-      return {
-        ...prev,
-        orders: [order, ...prev.orders],
-        money: saleMove ? [saleMove, ...prev.money] : prev.money
-      };
-    });
+        description: 'Pago del pedido ' + order.id.slice(-6),
+        category: order.paymentMethod || 'venta',
+        method: order.paymentMethod || 'efectivo'
+      }, ...current.money] : current.money
+    }));
   }
 
-  function addCombo(combo: BusinessState['combos'][number]) {
-    if (!state) return;
-    const chosenProducts = combo.productIds
-      .map(id => state.products.find(p => p.id === id))
-      .filter((p): p is Product => Boolean(p));
-    const cost = chosenProducts.reduce((sum, product) => sum + product.cost, 0);
-    setCart(prev => {
-      const productId = 'combo_' + combo.id;
-      const found = prev.find(i => i.productId === productId);
-      if (found) {
-        const quantity = found.quantity + 1;
-        return prev.map(i => i.productId === productId
-          ? { ...i, quantity, subtotal: quantity * i.unitPrice }
-          : i
-        );
-      }
-      return prev.concat([{
-        productId,
-        productName: combo.name,
-        quantity: 1,
-        unitPrice: combo.price,
-        cost,
-        subtotal: combo.price
-      }]);
-    });
-  }
+  function changeOrder(id: string, patch: Partial<Order>) {
+    const before = stateRef.current?.orders.find(o => o.id === id);
+    if (!before) return;
 
-  function addToCart(product: Product) {
-    setCart(prev => {
-      const found = prev.find(i => i.productId === product.id);
-      if (found) return prev.map(i => i.productId === product.id ? { ...i, quantity: i.quantity + 1, subtotal: (i.quantity + 1) * i.unitPrice } : i);
-      return [...prev, {
-        productId: product.id,
-        productName: product.name,
-        quantity: 1,
-        unitPrice: product.price,
-        cost: product.cost,
-        subtotal: product.price
-      }];
-    });
-  }
-
-  function submitCustomerOrder() {
-    if (!state) return;
-    if (!customer.name.trim() || !/^\\d{6,20}$/.test(customer.phone.trim()) || cart.length === 0) {
-      setMessage('Completa un nombre, un teléfono válido y agrega al menos un producto.');
-      return;
-    }
-    const subtotal = cart.reduce((s, i) => s + i.subtotal, 0);
-    const now = new Date();
-    const promo = state.promotions.find(p =>
-      p.active &&
-      (!p.code || p.code.toUpperCase() === promoCode.trim().toUpperCase()) &&
-      (!p.startAt || new Date(p.startAt) <= now) &&
-      (!p.endAt || new Date(p.endAt) >= now)
-    );
-    const quantity = cart.reduce((s, i) => s + i.quantity, 0);
-    let discount = 0;
-    if (promo) {
-      if (promo.type === 'percent') discount = subtotal * Math.min(100, promo.value) / 100;
-      if (promo.type === 'fixed') discount = Math.min(subtotal, promo.value);
-      if (promo.type === 'quantity' && quantity >= (promo.minQuantity || 1)) discount = Math.min(subtotal, promo.value);
-      if (promo.type === 'date_price') discount = Math.max(0, subtotal - promo.value);
-    }
-    const deliveryFee = state.settings.deliveryEnabled && customer.address.trim()
-      ? Math.max(0, state.settings.deliveryFee)
-      : 0;
-    const total = Math.max(0, Number((subtotal - discount + deliveryFee).toFixed(2)));
-    const order: Order = {
-      id: uid('ord'),
-      createdAt: new Date().toISOString(),
-      customerName: customer.name.trim(),
-      customerPhone: customer.phone.trim(),
-      address: customer.address.trim(),
-      notes: customer.notes.trim(),
-      items: cart,
-      subtotal,
-      discount: Number(discount.toFixed(2)),
-      total,
-      status: 'pendiente',
-      paid: 0,
-      discountCode: promo?.code,
-      source: 'cliente'
-    };
-    addOrder(order);
-    if (online && apiConfigured()) {
-      void submitPublicOrder(order).then(
-        result => {
-          setState(prev => prev ? { ...prev, orders: prev.orders.map(item => item.id === order.id ? { ...item, remoteId: result.id } : item) } : prev);
-          setMessage('Pedido enviado y guardado en línea.');
-        },
-        () => setMessage('Pedido guardado sin conexión; se conservará en este dispositivo.')
-      );
-    } else {
-      setMessage('Pedido guardado sin conexión; se conservará en este dispositivo.');
-    }
-    setCart([]);
-    setPromoCode('');
-    setCustomer({ name: '', phone: '', address: '', notes: '' });
-  }
-
-  function updateOrder(id: string, patch: Partial<Order>) {
-    if (!state) return;
-    const current = state.orders.find(o => o.id === id);
-    if (!current) return;
-
-    if (patch.status === 'preparando' && !current.inventoryDeducted) {
+    if (patch.status === 'preparando' && !before.inventoryDeducted) {
       const shortages: string[] = [];
-      for (const item of current.items) {
-        const recipe = state.recipes.find(r => r.productId === item.productId);
-        if (!recipe) continue;
-        for (const line of recipe.ingredients) {
-          const ingredient = state.ingredients.find(i => i.id === line.ingredientId);
-          const required = (line.quantity / Math.max(1, recipe.yieldUnits)) * item.quantity;
-          if (ingredient && ingredient.stock + 1e-9 < required) {
-            shortages.push(ingredient.name + ' (faltan ' + (required - ingredient.stock).toFixed(2) + ' ' + ingredient.unit + ')');
+      for (const item of before.items) {
+        const productIds = item.productId.startsWith('combo_')
+          ? (stateRef.current?.combos.find(c => c.id === item.productId.slice(6))?.productIds || []).map(id => ({ productId: id, quantity: item.quantity }))
+          : [{ productId: item.productId, quantity: item.quantity }];
+
+        for (const entry of productIds) {
+          const recipe = stateRef.current?.recipes.find(r => r.productId === entry.productId);
+          if (!recipe) continue;
+          for (const line of recipe.ingredients) {
+            const ingredient = stateRef.current?.ingredients.find(i => i.id === line.ingredientId);
+            const required = (line.quantity / Math.max(1, recipe.yieldUnits)) * entry.quantity;
+            if (ingredient && ingredient.stock + 0.000001 < required) {
+              shortages.push(ingredient.name + ': faltan ' + (required - ingredient.stock).toFixed(2) + ' ' + ingredient.unit);
+            }
           }
         }
       }
       if (shortages.length) {
-        setMessage('No se puede preparar todavía: ' + shortages.join(', '));
+        setMessage('No se puede preparar: ' + shortages.join(', '));
         return;
       }
     }
 
-    setState(prev => {
-      if (!prev) return prev;
-      const nextOrder = { ...current, ...patch };
-      const paidDelta = Number(nextOrder.paid || 0) - Number(current.paid || 0);
-      let nextMoney = prev.money;
+    updateState(current => {
+      const currentOrder = current.orders.find(o => o.id === id);
+      if (!currentOrder) return current;
+      const next = { ...currentOrder, ...patch };
+      const paidDelta = number(next.paid) - number(currentOrder.paid);
+
+      let money = current.money;
       if (paidDelta !== 0) {
-        nextMoney = [{
+        money = [{
           id: uid('mov'),
           date: new Date().toISOString(),
           type: paidDelta > 0 ? 'venta' : 'ajuste',
           amount: Math.abs(paidDelta),
-          description: 'Pago del pedido ' + current.id.slice(-6),
-          category: nextOrder.paymentMethod || 'venta',
-          method: nextOrder.paymentMethod || 'efectivo'
-        }, ...prev.money];
+          description: 'Pago pedido ' + currentOrder.id.slice(-6),
+          category: next.paymentMethod || 'venta',
+          method: next.paymentMethod || 'efectivo'
+        }, ...money];
       }
 
-      let ingredients = prev.ingredients;
-      let inventoryDeducted = current.inventoryDeducted;
-      if (patch.status === 'preparando' && !current.inventoryDeducted) {
-        ingredients = prev.ingredients.map(ingredient => {
+      let ingredients = current.ingredients;
+      let inventoryDeducted = currentOrder.inventoryDeducted;
+      if (patch.status === 'preparando' && !currentOrder.inventoryDeducted) {
+        ingredients = current.ingredients.map(ingredient => {
           let stock = ingredient.stock;
-          for (const item of current.items) {
-            const expanded = item.productId.startsWith('combo_')
-              ? (prev.combos.find(c => c.id === item.productId.slice('combo_'.length))?.productIds || []).map(productId => ({
-                  productId,
-                  quantity: item.quantity
-                }))
+          for (const item of currentOrder.items) {
+            const entries = item.productId.startsWith('combo_')
+              ? (current.combos.find(c => c.id === item.productId.slice(6))?.productIds || []).map(productId => ({ productId, quantity: item.quantity }))
               : [{ productId: item.productId, quantity: item.quantity }];
-
-            for (const entry of expanded) {
-              const recipe = prev.recipes.find(r => r.productId === entry.productId);
+            for (const entry of entries) {
+              const recipe = current.recipes.find(r => r.productId === entry.productId);
               if (!recipe) continue;
               for (const line of recipe.ingredients) {
                 if (line.ingredientId === ingredient.id) {
@@ -613,214 +697,509 @@ export function App() {
         inventoryDeducted = true;
       }
 
-      let customers = prev.customers;
-      if (patch.status === 'entregada' && current.status !== 'entregada' && current.customerPhone) {
-        const points = Math.max(0, Math.floor(nextOrder.total * prev.settings.loyaltyPointsPerSol));
-        customers = prev.customers.map(customer =>
-          customer.phone === current.customerPhone
-            ? {
-                ...customer,
-                points: customer.points + points,
-                level: customer.points + points >= 500 ? 'Oro' : customer.points + points >= 200 ? 'Plata' : 'Inicial'
-              }
-            : customer
-        );
+      let customers = current.customers;
+      if (patch.status === 'entregada' && currentOrder.status !== 'entregada' && !currentOrder.loyaltyAwardedAt) {
+        const found = customers.find(c => c.phone === currentOrder.customerPhone);
+        if (found && current.settings.loyaltyPointsPerSol > 0) {
+          const points = Math.floor(number(next.total) * current.settings.loyaltyPointsPerSol);
+          customers = customers.map(c => c.id === found.id
+            ? { ...c, points: c.points + points, level: c.points + points >= 500 ? 'Oro' : c.points + points >= 200 ? 'Plata' : 'Inicial' }
+            : c);
+        }
+        next.loyaltyAwardedAt = new Date().toISOString();
       }
 
-      const notifications = nextOrder.status !== current.status
-        ? [{
-            id: uid('not'),
-            type: 'pedido' as const,
-            title: 'Pedido actualizado',
-            message: current.customerName + ': ' + STATUS_LABELS[nextOrder.status],
-            read: false,
-            createdAt: new Date().toISOString()
-          }, ...prev.notifications]
-        : prev.notifications;
+      const notifications = patch.status && patch.status !== currentOrder.status ? [{
+        id: uid('not'),
+        type: 'pedido' as const,
+        title: 'Pedido actualizado',
+        message: currentOrder.customerName + ': ' + STATUS_LABELS[patch.status],
+        read: false,
+        createdAt: new Date().toISOString()
+      }, ...current.notifications] : current.notifications;
 
       return {
-        ...prev,
-        orders: prev.orders.map(o => o.id === id ? { ...nextOrder, inventoryDeducted } : o),
-        money: nextMoney,
+        ...current,
+        orders: current.orders.map(o => o.id === id ? { ...next, inventoryDeducted } : o),
+        money,
         ingredients,
         customers,
         notifications
       };
     });
 
-    if (patch.status && current.source === 'cliente' && current.remoteId && online && apiConfigured() && state.admin?.token) {
-      void updatePublicOrderStatus(state.admin.token, current.remoteId, patch.status).then(
-        () => { void notifyNative('Diego Bakery', current.customerName + ': ' + STATUS_LABELS[patch.status as OrderStatus]); },
-        () => setMessage('El cambio quedó guardado localmente; no se pudo actualizar el pedido en línea.')
-      );
+    if (patch.status && before.source === 'cliente' && before.remoteId && before.remoteId) {
+      const token = stateRef.current?.admin?.token;
+      if (token && online && apiConfigured()) {
+        void updatePublicOrderStatus(token, before.remoteId, patch.status).catch(() => setMessage('Guardado localmente. El cambio en nube se reintentará.'));
+      }
     }
   }
 
-  if (loading || !state) {
-    return <div className="splash"><div className="brand-mark">DB</div><h1>Diego Bakery</h1><p>Cargando tu negocio…</p></div>;
+  function createCustomer(form: { name: string; phone: string; address: string; notes: string }) {
+    const phone = normalizePhone(form.phone);
+    if (!form.name.trim() || phone.length < 6) {
+      setMessage('Nombre y teléfono son obligatorios.');
+      return;
+    }
+    updateState(current => ({
+      ...current,
+      customers: [{
+        id: uid('cus'),
+        name: form.name.trim(),
+        phone,
+        addresses: form.address.trim() ? [{ label: 'Principal', address: form.address.trim() }] : [],
+        points: 0,
+        level: 'Inicial',
+        favorites: [],
+        notes: form.notes.trim(),
+        createdAt: new Date().toISOString()
+      }, ...current.customers]
+    }));
   }
 
-  const theme = state.settings.theme === 'system'
-    ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-    : state.settings.theme;
+  function submitCustomerOrder() {
+    if (!state) return;
+    const name = customerDraft.name.trim();
+    const phone = normalizePhone(customerDraft.phone);
+    if (name.length < 2 || phone.length < 6 || !cart.length) {
+      setMessage('Completa nombre, teléfono y agrega un producto.');
+      return;
+    }
+    const subtotal = cart.reduce((sum, item) => sum + number(item.subtotal), 0);
+    const quantity = cart.reduce((sum, item) => sum + number(item.quantity), 0);
+    const now = new Date();
+    const promo = state.promotions.find(p =>
+      p.active &&
+      (!p.code || p.code.toUpperCase() === promoCode.trim().toUpperCase()) &&
+      (!p.startAt || new Date(p.startAt) <= now) &&
+      (!p.endAt || new Date(p.endAt) >= now)
+    );
+    let discount = 0;
+    if (promo?.type === 'percent') discount = subtotal * Math.min(100, number(promo.value)) / 100;
+    if (promo?.type === 'fixed') discount = Math.min(subtotal, Math.max(0, number(promo.value)));
+    if (promo?.type === 'quantity' && quantity >= Math.max(1, number(promo.minQuantity, 1))) discount = Math.min(subtotal, Math.max(0, number(promo.value)));
+    if (promo?.type === 'date_price') discount = Math.max(0, subtotal - Math.max(0, number(promo.value)));
 
-  if (mode === 'cliente') {
-    return <CustomerView products={activeProducts} cart={cart} addToCart={addToCart} addCombo={addCombo} customer={customer} setCustomer={setCustomer} promoCode={promoCode} setPromoCode={setPromoCode} promotions={state.promotions} combos={state.combos} submit={submitCustomerOrder} onAdmin={() => setMode('admin')} theme={theme} message={message} settings={state.settings} />;
+    const deliveryFee = state.settings.deliveryEnabled && customerDraft.address.trim()
+      ? Math.max(0, number(state.settings.deliveryFee))
+      : 0;
+    const total = Math.max(0, Number((subtotal - discount + deliveryFee).toFixed(2)));
+
+    const order: Order = {
+      id: uid('ord'),
+      createdAt: new Date().toISOString(),
+      customerName: name,
+      customerPhone: phone,
+      address: customerDraft.address.trim(),
+      notes: customerDraft.notes.trim(),
+      items: cart,
+      subtotal: Number(subtotal.toFixed(2)),
+      discount: Number(discount.toFixed(2)),
+      total,
+      status: 'pendiente',
+      paid: 0,
+      discountCode: promo?.code,
+      source: 'cliente'
+    };
+
+    addOrder(order);
+    setCart([]);
+    setCustomerDraft({ name: '', phone: '', address: '', notes: '' });
+    setPromoCode('');
+    setMessage('Pedido guardado. Se enviará automáticamente cuando haya conexión.');
+  }
+
+  function addToCart(product: Product) {
+    setCart(current => {
+      const found = current.find(item => item.productId === product.id);
+      if (found) {
+        const quantity = found.quantity + 1;
+        return current.map(item => item.productId === product.id
+          ? { ...item, quantity, subtotal: Number((quantity * item.unitPrice).toFixed(2)) }
+          : item);
+      }
+      return current.concat([{
+        productId: product.id,
+        productName: product.name,
+        quantity: 1,
+        unitPrice: product.price,
+        cost: product.cost,
+        subtotal: product.price
+      }]);
+    });
+  }
+
+  if (!ready || !state) {
+    return <div className="splash"><div className="brand-mark">DB</div><h1>Diego Bakery</h1><p>Preparando tu negocio…</p></div>;
+  }
+
+  const theme = state.settings.theme === 'dark' ? 'dark' : state.settings.theme === 'light' ? 'light' : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  const isCustomer = mode === 'cliente';
+
+  if (isCustomer) {
+    return <CustomerView
+      products={activeProducts}
+      cart={cart}
+      addToCart={addToCart}
+      customer={customerDraft}
+      setCustomer={setCustomerDraft}
+      promoCode={promoCode}
+      setPromoCode={setPromoCode}
+      promotions={state.promotions}
+      combos={state.combos}
+      submit={submitCustomerOrder}
+      onAdmin={() => setMode('admin')}
+      theme={theme}
+      message={message}
+      settings={state.settings}
+      addCombo={(combo) => {
+        const cost = combo.productIds.reduce((sum, id) => sum + number(state.products.find(p => p.id === id)?.cost), 0);
+        addToCart({
+          id: 'x' as never,
+          name: combo.name,
+          description: combo.name,
+          category: 'Combo',
+          categories: ['Combo'],
+          price: combo.price,
+          cost,
+          stock: 999,
+          active: true,
+          seasonal: false,
+          tags: [],
+          flavors: [],
+          sizes: [],
+          presentation: ''
+        });
+      }}
+    />;
   }
 
   if (!logged) {
     return (
-      <div className={`auth-screen ${theme}`}>
-        <div className="auth-card">
-          <div className="brand-mark">DB</div>
-          <p className="eyebrow">GESTIÓN INTEGRAL</p>
-          <h1>Diego Bakery</h1>
-          <p className="muted">Administra dinero, pedidos, productos, ingredientes y ganancias desde un solo lugar.</p>
-          <div className="mode-switch"><button className="active" onClick={() => setMode('admin')}>Administrador</button><button onClick={() => setMode('cliente')}>Clientes</button></div>
-          <label>Teléfono<input value={loginPhone} onChange={e => setLoginPhone(e.target.value)} inputMode="tel" placeholder="Tu teléfono" /></label>
-          <label>PIN<input value={loginPin} onChange={e => setLoginPin(e.target.value.replace(/\D/g, '').slice(0, 12))} inputMode="numeric" type="password" placeholder="••••" /></label>
-          <button className="primary wide" onClick={() => void doLogin()}>Entrar</button>
-          {biometryAvailable && <button className="secondary wide" onClick={() => void biometricLogin()}>Entrar con biometría</button>}
-          <button className="link-button" onClick={() => setSetupOpen(true)}>Configurar este dispositivo</button>
-          <div className="offline-badge">{online ? 'En línea' : 'Modo sin conexión'} · tus datos locales están disponibles</div>
-          {message && <div className="notice">{message}</div>}
-        </div>
-        {setupOpen && <Modal title="Configurar administrador" onClose={() => setSetupOpen(false)}>
-          <label>Nombre completo<input value={setupName} onChange={e => setSetupName(e.target.value)} /></label>
-          <label>Teléfono<input value={setupPhone} onChange={e => setSetupPhone(e.target.value)} inputMode="tel" /></label>
-          <label>PIN de acceso<input value={setupPin} onChange={e => setSetupPin(e.target.value.replace(/\D/g, '').slice(0, 12))} inputMode="numeric" type="password" /></label>
-          <button className="primary wide" onClick={() => void setupLocalAdmin()}>Guardar y entrar</button>
-        </Modal>}
-      </div>
+      <AuthScreen
+        theme={theme}
+        online={online}
+        message={message}
+        loginPhone={loginPhone}
+        loginPin={loginPin}
+        setLoginPhone={setLoginPhone}
+        setLoginPin={setLoginPin}
+        setupOpen={setupOpen}
+        setSetupOpen={setSetupOpen}
+        setupName={setupName}
+        setupPhone={setupPhone}
+        setupPin={setupPin}
+        setSetupName={setSetupName}
+        setSetupPhone={setSetupPhone}
+        setSetupPin={setSetupPin}
+        doLogin={doLogin}
+        setupLocalAdmin={setupLocalAdmin}
+        onCustomer={() => { setMode('cliente'); setMessage(''); }}
+      />
     );
   }
 
   return (
-    <div className={`app-shell ${theme}`}>
+    <div className={'app-shell ' + theme}>
       <aside className="sidebar">
-        <div className="sidebar-brand"><div className="brand-mark small">DB</div><div><strong>Diego Bakery</strong><span>Control del negocio</span></div></div>
+        <div className="sidebar-brand">
+          <div className="brand-mark small">DB</div>
+          <div><strong>{state.settings.businessName}</strong><span>Gestión integral</span></div>
+        </div>
+        <div className="sidebar-search">
+          <input aria-label="Buscar en el negocio" value={globalSearch} onChange={e => setGlobalSearch(e.target.value)} placeholder="Buscar..." />
+        </div>
         <nav>
-          {([
-            ['inicio', 'Inicio'], ['pedidos', 'Pedidos'], ['productos', 'Productos'], ['ingredientes', 'Ingredientes'],
-            ['recetas', 'Recetas'], ['proveedores', 'Proveedores'], ['clientes', 'Clientes'], ['finanzas', 'Finanzas'],
-            ['caja', 'Caja'], ['deudas', 'Deudas'], ['perdidas', 'Pérdidas'], ['promociones', 'Promociones'], ['combinaciones', 'Combos'], ['lealtad', 'Lealtad'],
-            ['notificaciones', 'Avisos'], ['servicios', 'Servicios'], ['reportes', 'Reportes'], ['ajustes', 'Ajustes']
-          ] as [Section,string][]).map(([id,label]) => <button key={id} className={section === id ? 'nav-item active' : 'nav-item'} onClick={() => setSection(id)}><span>{label}</span>{id === 'pedidos' && pendingOrders > 0 && <b>{pendingOrders}</b>}</button>)}
+          {NAV.map(item => (
+            <button
+              key={item.id}
+              className={'nav-item ' + (section === item.id ? 'active' : '')}
+              onClick={() => setSection(item.id)}
+            >
+              <span><b className="nav-icon">{item.icon}</b>{item.label}</span>
+              {item.badge && pendingOrders > 0 ? <b className="nav-count">{pendingOrders}</b> : null}
+            </button>
+          ))}
         </nav>
         <div className="sidebar-bottom">
           <button className="secondary wide" onClick={() => { setMode('cliente'); setMessage(''); }}>Vista de cliente</button>
-          <button className="link-button" onClick={logout}>Cerrar sesión</button>
+          <button className="link-button" onClick={() => { setLogged(false); updateState(current => ({ ...current, admin: current.admin ? { ...current.admin, token: undefined } : undefined })); }}>Cerrar sesión</button>
         </div>
       </aside>
+
       <main className="main">
         <header className="topbar">
-          <div><p className="eyebrow">{section === 'inicio' ? 'RESUMEN' : section.toUpperCase()}</p><h2>{sectionTitle(section)}</h2></div>
-          <div className="top-actions"><span className={online ? 'status online' : 'status'}>{online ? 'Sincronizable' : 'Offline'}</span><button className="icon-button" onClick={() => void refreshFromServer()}>↻</button></div>
+          <div className="topbar-main">
+            <p className="eyebrow">{section === 'inicio' ? 'CONTROL DIARIO' : section.toUpperCase()}</p>
+            <h2>{sectionTitle(section)}</h2>
+          </div>
+          <div className="top-actions">
+            <span className={'sync-chip ' + syncState}>
+              <span className="sync-dot"></span>
+              {online ? (syncState === 'error' ? 'Pendiente de sincronizar' : syncState === 'saving' ? 'Guardando...' : 'En línea') : 'Sin conexión'}
+            </span>
+            <button className="icon-button" title="Actualizar datos" onClick={() => void refreshFromServer()}>↻</button>
+          </div>
         </header>
 
-        {message && <div className="toast">{message}</div>}
+        {message ? <div className="toast" role="status">{message}</div> : null}
 
-        {section === 'inicio' && <Dashboard cash={cashBalance} sales={totalSales} expenses={totalExpenses} pendingOrders={pendingOrders} state={state} />}
-        {section === 'pedidos' && <OrdersView state={state} onUpdate={updateOrder} />}
-        {section === 'productos' && <ProductsView products={products} onCreate={createProduct} onUpdate={updateProduct} />}
-        {section === 'ingredientes' && <IngredientsView ingredients={state.ingredients} onAdd={addIngredient} onStock={changeStock} />}
+        {globalSearch.trim() ? (
+          <GlobalSearchOverlay state={state} query={globalSearch} onOpen={setSection} onClose={() => setGlobalSearch('')} />
+        ) : null}
+
+        {section === 'inicio' && <Dashboard state={state} derived={derived} openSection={setSection} />}
+        {section === 'pedidos' && <OrdersView state={state} onUpdate={changeOrder} query={globalSearch} />}
+        {section === 'productos' && <ProductsView products={products} onCreate={createProduct} onUpdate={updateProduct} query={globalSearch} />}
+        {section === 'ingredientes' && <IngredientsView ingredients={state.ingredients} onAdd={addIngredient} onStock={changeStock} query={globalSearch} />}
         {section === 'recetas' && <RecipesView state={state} setState={setState} />}
-        {section === 'proveedores' && <SuppliersView suppliers={state.suppliers} setSuppliers={items => setState(prev => prev ? { ...prev, suppliers: items } : prev)} />}
-        {section === 'clientes' && <CustomersView customers={state.customers} setCustomers={items => setState(prev => prev ? { ...prev, customers: items } : prev)} />}
-        {section === 'finanzas' && <FinanceView moves={state.money} addMoney={addMoney} balance={cashBalance} />}
-        {section === 'caja' && <CashRegisterView register={state.cashRegister} setRegister={register => setState(prev => prev ? { ...prev, cashRegister: register } : prev)} moneyMoves={state.money} />}
-        {section === 'promociones' && <PromotionsView promotions={state.promotions} products={state.products} setPromotions={items => setState(prev => prev ? { ...prev, promotions: items } : prev)} />}
-        {section === 'combinaciones' && <CombosView combos={state.combos} products={state.products} setCombos={items => setState(prev => prev ? { ...prev, combos: items } : prev)} />}
-        {section === 'lealtad' && <LoyaltyView rewards={state.loyaltyRewards} setRewards={items => setState(prev => prev ? { ...prev, loyaltyRewards: items } : prev)} customers={state.customers} />}
-        {section === 'notificaciones' && <NotificationsView items={state.notifications} setItems={items => setState(prev => prev ? { ...prev, notifications: items } : prev)} />}
-        {section === 'servicios' && <ServicesView services={state.services} setServices={items => setState(prev => prev ? { ...prev, services: items } : prev)} />}
-        {section === 'deudas' && <DebtsView debts={state.debts} setDebts={debts => setState(prev => prev ? { ...prev, debts } : prev)} />}
+        {section === 'proveedores' && <SuppliersView suppliers={state.suppliers} setSuppliers={items => updateState(current => ({ ...current, suppliers: items }))} />}
+        {section === 'clientes' && <CustomersView customers={state.customers} setCustomers={items => updateState(current => ({ ...current, customers: items }))} />}
+        {section === 'finanzas' && <FinanceView moves={state.money} addMoney={addMoney} balance={derived.cash} />}
+        {section === 'caja' && <CashRegisterView register={state.cashRegister} setRegister={register => updateState(current => ({ ...current, cashRegister: register }))} moneyMoves={state.money} />}
+        {section === 'promociones' && <PromotionsView promotions={state.promotions} products={state.products} setPromotions={items => updateState(current => ({ ...current, promotions: items }))} />}
+        {section === 'combinaciones' && <CombosView combos={state.combos} products={state.products} setCombos={items => updateState(current => ({ ...current, combos: items }))} />}
+        {section === 'lealtad' && <LoyaltyView rewards={state.loyaltyRewards} setRewards={items => updateState(current => ({ ...current, loyaltyRewards: items }))} customers={state.customers} />}
+        {section === 'notificaciones' && <NotificationsView items={state.notifications} setItems={items => updateState(current => ({ ...current, notifications: items }))} />}
+        {section === 'servicios' && <ServicesView services={state.services} setServices={items => updateState(current => ({ ...current, services: items }))} />}
+        {section === 'deudas' && <DebtsView debts={state.debts} setDebts={items => updateState(current => ({ ...current, debts: items }))} />}
         {section === 'perdidas' && <LossesView state={state} setState={setState} />}
-        {section === 'reportes' && <ReportsView state={state} />}
-        {section === 'ajustes' && <SettingsView state={state} update={updateSettings} exportBackup={() => downloadBackup(state)} onRestore={async file => { const restored = await restoreBackup(file); setState(restored); setMessage('Respaldo restaurado correctamente.'); }} />}
+        {section === 'reportes' && <ReportsView state={state} derived={derived} />}
+        {section === 'ajustes' && <SettingsView state={state} update={patch => updateState(current => ({ ...current, settings: { ...current.settings, ...patch } }))} exportBackup={() => downloadBackup(state)} onRestore={async file => { const restored = await restoreBackup(file); stateRef.current = restored; setState(restored); setMessage('Respaldo restaurado.'); }} healthCheck={async () => { try { await pingHealth(); setMessage('Servidor disponible.'); } catch { setMessage('No se pudo contactar al servidor.'); } }} />}
       </main>
     </div>
   );
 }
 
-function sectionTitle(section: Section): string {
-  return {
-    inicio: 'Hola, administra tu negocio.',
-    pedidos: 'Pedidos',
-    productos: 'Productos',
-    ingredientes: 'Ingredientes',
-    finanzas: 'Finanzas y caja',
-    deudas: 'Cuentas por cobrar y pagar',
-    perdidas: 'Pérdidas y desperdicios',
-    recetas: 'Recetas y costos reales',
-    proveedores: 'Proveedores',
-    clientes: 'Clientes',
-    caja: 'Caja',
-    promociones: 'Promociones y descuentos',
-    combinaciones: 'Combos',
-    lealtad: 'Programa de lealtad',
-    notificaciones: 'Avisos y notificaciones',
-    servicios: 'Servicios y utilidades',
-    reportes: 'Reportes',
-    ajustes: 'Configuración'
-  }[section];
+function AuthScreen(props: {
+  theme: string; online: boolean; message: string; loginPhone: string; loginPin: string;
+  setLoginPhone: (v: string) => void; setLoginPin: (v: string) => void;
+  setupOpen: boolean; setSetupOpen: (v: boolean) => void; setupName: string; setupPhone: string; setupPin: string;
+  setSetupName: (v: string) => void; setSetupPhone: (v: string) => void; setSetupPin: (v: string) => void;
+  doLogin: () => void; setupLocalAdmin: () => void; onCustomer: () => void;
+}) {
+  return (
+    <div className={'auth-screen ' + props.theme}>
+      <div className="auth-card">
+        <div className="brand-mark">DB</div>
+        <p className="eyebrow">GESTIÓN INTEGRAL</p>
+        <h1>Diego Bakery</h1>
+        <p className="muted">Pedidos, productos, inventario, dinero y reportes en un solo lugar.</p>
+        <div className="mode-switch">
+          <button className="active">Administrador</button>
+          <button onClick={props.onCustomer}>Cliente</button>
+        </div>
+        <label>Teléfono<input value={props.loginPhone} onChange={e => props.setLoginPhone(e.target.value.replace(/\D/g, '').slice(0, 15))} inputMode="tel" placeholder="999999999" /></label>
+        <label>PIN<input value={props.loginPin} onChange={e => props.setLoginPin(e.target.value.replace(/\D/g, '').slice(0, 12))} type="password" inputMode="numeric" placeholder="••••" /></label>
+        <button className="primary wide" onClick={props.doLogin}>Entrar</button>
+        <button className="secondary wide" onClick={() => props.setSetupOpen(true)}>Configurar este dispositivo</button>
+        <button className="link-button wide" onClick={props.onCustomer}>Entrar al catálogo de cliente</button>
+        <span className="offline-badge">{props.online ? '● En línea' : '○ Sin conexión'} · guardado local automático</span>
+        {props.message ? <div className="notice">{props.message}</div> : null}
+      </div>
+      {props.setupOpen ? <Modal title="Configurar administrador" onClose={() => props.setSetupOpen(false)}>
+        <label>Nombre<input value={props.setupName} onChange={e => props.setSetupName(e.target.value)} /></label>
+        <label>Teléfono<input value={props.setupPhone} onChange={e => props.setSetupPhone(e.target.value.replace(/\D/g, '').slice(0, 15))} /></label>
+        <label>PIN<input value={props.setupPin} onChange={e => props.setSetupPin(e.target.value.replace(/\D/g, '').slice(0, 12))} type="password" /></label>
+        <button className="primary wide" onClick={props.setupLocalAdmin}>Guardar y entrar</button>
+      </Modal> : null}
+    </div>
+  );
 }
 
-function Dashboard({ cash, sales, expenses, pendingOrders, state }: { cash: number; sales: number; expenses: number; pendingOrders: number; state: BusinessState }) {
-  const recent = state.orders.slice(0, 6);
-  const lowStock = state.ingredients.filter(i => i.stock <= i.minStock).slice(0, 5);
+function Dashboard({ state, derived, openSection }: { state: BusinessState; derived: ReturnType<typeof useDerivedPlaceholder>; openSection: (section: Section) => void }) {
+  return null as never;
+}
+type useDerivedPlaceholder = () => never;
+
+function DashboardActual({ state, derived, openSection }: { state: BusinessState; derived: any; openSection: (section: Section) => void }) {
+  const todayOrders = state.orders.filter(o => o.createdAt.slice(0, 10) === dateKey()).slice(0, 6);
+  return (
+    <div className="content">
+      <div className="metrics">
+        <Metric label="Ventas de hoy" value={money(derived.todaySales)} hint={money(derived.monthSales) + ' este mes'} onClick={() => openSection('finanzas')} />
+        <Metric label="Caja" value={money(derived.cash)} hint="Solo efectivo" onClick={() => openSection('caja')} />
+        <Metric label="Pedidos pendientes" value={String(derived.pending)} hint={derived.todayOrders + ' pedidos hoy'} onClick={() => openSection('pedidos')} />
+        <Metric label="Valor de inventario" value={money(derived.inventoryValue)} hint={derived.lowStock.length + ' alertas'} onClick={() => openSection('ingredientes')} />
+      </div>
+      <div className="quick-actions">
+        <button className="quick primary" onClick={() => openSection('pedidos')}><b>＋</b><span>Revisar pedidos</span></button>
+        <button className="quick secondary" onClick={() => openSection('productos')}><b>▣</b><span>Gestionar productos</span></button>
+        <button className="quick secondary" onClick={() => openSection('ingredientes')}><b>◫</b><span>Revisar stock</span></button>
+        <button className="quick secondary" onClick={() => openSection('reportes')}><b>▥</b><span>Ver reportes</span></button>
+      </div>
+      <div className="grid-2">
+        <section className="panel">
+          <div className="panel-head"><div><p className="eyebrow">HOY</p><h3>Pedidos recientes</h3></div><button className="link-button" onClick={() => openSection('pedidos')}>Ver todos →</button></div>
+          {todayOrders.length ? <div className="compact-list">{todayOrders.map(order => <button className="compact-row" key={order.id} onClick={() => openSection('pedidos')}><span><strong>{order.customerName}</strong><small>{order.items.length} producto(s) · {formatDate(order.createdAt)}</small></span><span className={'status status-' + order.status}>{STATUS_LABELS[order.status]}</span><b>{money(order.total)}</b></button>)}</div> : <Empty text="Todavía no hay pedidos hoy." />}
+        </section>
+        <section className="panel">
+          <div className="panel-head"><div><p className="eyebrow">ATENCIÓN</p><h3>Alertas automáticas</h3></div><button className="link-button" onClick={() => openSection('notificaciones')}>Abrir avisos →</button></div>
+          {derived.lowStock.length ? <div className="compact-list">{derived.lowStock.slice(0, 6).map(i => <button className="compact-row" key={i.id} onClick={() => openSection('ingredientes')}><span><strong>{i.name}</strong><small>Proveedor: {i.supplier || 'Sin proveedor'}</small></span><b className="danger-text">{i.stock} {i.unit}</b></button>)}</div> : <Empty text="No hay alertas de stock." />}
+        </section>
+      </div>
+      <div className="grid-3">
+        <StatCard title="Cobrar" value={money(derived.receivable)} action={() => openSection('deudas')} />
+        <StatCard title="Pagar" value={money(derived.payable)} action={() => openSection('deudas')} />
+        <StatCard title="Ticket promedio" value={money(derived.averageTicket)} action={() => openSection('reportes')} />
+      </div>
+      <section className="panel">
+        <div className="panel-head"><div><p className="eyebrow">AUTOMÁTICO</p><h3>Lo que la app calcula por ti</h3></div></div>
+        <div className="check-grid">
+          {[
+            'Totales de ventas por día y mes',
+            'Saldo de caja según movimientos',
+            'Valor del inventario por stock × costo',
+            'Descuento y total del carrito',
+            'Costo y margen de recetas',
+            'Alertas de stock bajo',
+            'Puntos de fidelidad al entregar',
+            'Sincronización y respaldo automático'
+          ].map(item => <div className="check" key={item}><span>✓</span>{item}</div>)}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function Metric({ label, value, hint, onClick }: { label: string; value: string; hint?: string; onClick?: () => void }) {
+  const Tag = onClick ? 'button' : 'div';
+  return <Tag className="metric metric-button" onClick={onClick}><span>{label}</span><strong>{value}</strong>{hint ? <small>{hint}</small> : null}</Tag>;
+}
+
+function StatCard({ title, value, action }: { title: string; value: string; action: () => void }) {
+  return <button className="stat-card" onClick={action}><span>{title}</span><strong>{value}</strong><b>Ver detalle →</b></button>;
+}
+
+function Empty({ text }: { text: string }) {
+  return <div className="empty"><span>{text}</span></div>;
+}
+
+function OrdersView({ state, onUpdate, query }: { state: BusinessState; onUpdate: (id: string, patch: Partial<Order>) => void; query: string }) {
+  const [statusFilter, setStatusFilter] = useState<'all' | OrderStatus>('all');
+  const [paymentFilter, setPaymentFilter] = useState<'all' | 'pendiente' | 'pagado'>('all');
+  const [openId, setOpenId] = useState<string | null>(null);
+  const list = state.orders.filter(o => {
+    const hay = (o.customerName + ' ' + o.customerPhone + ' ' + o.id + ' ' + o.items.map(i => i.productName).join(' ')).toLowerCase();
+    const matchesSearch = !query.trim() || hay.includes(query.trim().toLowerCase());
+    const matchesStatus = statusFilter === 'all' || o.status === statusFilter;
+    const matchesPayment = paymentFilter === 'all' || (paymentFilter === 'pagado' ? o.paid >= o.total : o.paid < o.total);
+    return matchesSearch && matchesStatus && matchesPayment;
+  });
   return <div className="content">
-    <div className="metrics">
-      <Metric label="Caja del negocio" value={money(cash)} />
-      <Metric label="Ventas registradas" value={money(sales)} />
-      <Metric label="Gastos" value={money(expenses)} />
-      <Metric label="Pedidos pendientes" value={String(pendingOrders)} />
-    </div>
-    <div className="grid-2">
-      <section className="panel"><div className="panel-head"><div><p className="eyebrow">PEDIDOS</p><h3>Actividad reciente</h3></div></div>
-        {recent.length === 0 ? <Empty text="Todavía no hay pedidos." /> : <div className="table-wrap"><table><thead><tr><th>Cliente</th><th>Total</th><th>Estado</th></tr></thead><tbody>{recent.map(o => <tr key={o.id}><td>{o.customerName}</td><td>{money(o.total)}</td><td><span className="pill">{STATUS_LABELS[o.status]}</span></td></tr>)}</tbody></table></div>}
-      </section>
-      <section className="panel"><div className="panel-head"><div><p className="eyebrow">INVENTARIO</p><h3>Atención necesaria</h3></div></div>
-        {lowStock.length === 0 ? <Empty text="No hay ingredientes con stock bajo." /> : lowStock.map(i => <div className="list-row" key={i.id}><div><strong>{i.name}</strong><span>{i.supplier || 'Sin proveedor'}</span></div><b>{i.stock} {i.unit}</b></div>)}
-      </section>
-    </div>
-    <section className="panel"><div className="panel-head"><div><p className="eyebrow">MODELO</p><h3>Control económico</h3></div></div><div className="check-grid">
-      {['Dinero personal separado del negocio','Inversiones registradas como capital','Costos y precios editables por producto','Cuentas por cobrar y pagar','Pérdidas separadas del gasto normal','Respaldo manual y automático'].map(x => <div className="check" key={x}><span>✓</span>{x}</div>)}
-    </div></section>
+    <FilterBar title="Pedidos" count={list.length}>
+      <input value={query} readOnly placeholder="Usa el buscador de la barra lateral" />
+      <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as 'all' | OrderStatus)}>
+        <option value="all">Todos los estados</option>
+        {(Object.keys(STATUS_LABELS) as OrderStatus[]).map(k => <option key={k} value={k}>{STATUS_LABELS[k]}</option>)}
+      </select>
+      <select value={paymentFilter} onChange={e => setPaymentFilter(e.target.value as 'all' | 'pendiente' | 'pagado')}><option value="all">Todo pago</option><option value="pendiente">Pendiente de pago</option><option value="pagado">Pagado</option></select>
+    </FilterBar>
+    <section className="panel">
+      {list.length ? <div className="order-list">{list.map(o => {
+        const remaining = Math.max(0, number(o.total) - number(o.paid));
+        const next = nextStatus(o.status);
+        return <article className="order-card" key={o.id}>
+          <div className="order-main">
+            <div><strong>{o.customerName}</strong><span>{o.customerPhone || 'Sin teléfono'} · {formatDate(o.createdAt)}</span>{o.address ? <span>{o.address}</span> : null}</div>
+            <div className="order-total"><b>{money(o.total)}</b><span className={'status status-' + o.status}>{STATUS_LABELS[o.status]}</span></div>
+          </div>
+          <div className="order-items">{o.items.map((i, idx) => <span key={i.productId + '-' + idx}>{i.quantity}× {i.productName}</span>)}</div>
+          {openId === o.id ? <div className="detail-drawer">
+            <div className="detail-grid"><div><span>Subtotal</span><b>{money(o.subtotal)}</b></div><div><span>Descuento</span><b>{money(o.discount)}</b></div><div><span>Total</span><b>{money(o.total)}</b></div><div><span>Pendiente</span><b className={remaining > 0 ? 'danger-text' : ''}>{money(remaining)}</b></div></div>
+            {o.notes ? <div className="notice">Nota: {o.notes}</div> : null}
+          </div> : null}
+          <div className="order-actions">
+            {next ? <button className="primary" onClick={() => onUpdate(o.id, { status: next })}>Pasar a: {STATUS_LABELS[next]}</button> : <button className="secondary" disabled>Estado final</button>}
+            <select value={o.status} onChange={e => onUpdate(o.id, { status: e.target.value as OrderStatus })}>{(Object.keys(STATUS_LABELS) as OrderStatus[]).map(k => <option key={k} value={k}>{STATUS_LABELS[k]}</option>)}</select>
+            <select value={o.paymentMethod || ''} onChange={e => onUpdate(o.id, { paymentMethod: e.target.value as any || undefined })}><option value="">Forma de pago</option><option value="efectivo">Efectivo</option><option value="yape">Yape</option><option value="plin">Plin</option><option value="transferencia">Transferencia</option><option value="otro">Otro</option></select>
+            <input type="number" min="0" max={o.total} step="0.01" value={o.paid} onChange={e => onUpdate(o.id, { paid: Math.min(number(o.total), Math.max(0, number(e.target.value))) })} aria-label="Pago recibido" />
+            <button className="secondary" onClick={() => setOpenId(openId === o.id ? null : o.id)}>{openId === o.id ? 'Ocultar detalle' : 'Ver detalle'}</button>
+          </div>
+        </article>;
+      })}</div> : <Empty text="No hay pedidos que coincidan con estos filtros." />}
+    </section>
   </div>;
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
-  return <div className="metric"><span>{label}</span><strong>{value}</strong></div>;
+function FilterBar({ title, count, children }: { title: string; count: number; children: ReactNode }) {
+  return <section className="filter-bar"><div><p className="eyebrow">LISTA</p><h3>{title}<span>{count}</span></h3></div><div className="filter-controls">{children}</div></section>;
 }
 
-function OrdersView({ state, onUpdate }: { state: BusinessState; onUpdate: (id: string, patch: Partial<Order>) => void }) {
-  return <div className="content"><section className="panel"><div className="panel-head"><div><p className="eyebrow">GESTIÓN</p><h3>Todos los pedidos</h3></div></div>
-    {state.orders.length === 0 ? <Empty text="Los pedidos nuevos aparecerán aquí." /> : <div className="order-list">{state.orders.map(o => <div className="order-card" key={o.id}><div className="order-main"><div><strong>{o.customerName}</strong><span>{o.customerPhone || 'Sin teléfono'} · {new Date(o.createdAt).toLocaleString('es-PE')}</span>{o.address && <span>{o.address}</span>}</div><b>{money(o.total)}</b></div><div className="order-items">{o.items.map(i => <span key={i.productId}>{i.quantity}× {i.productName}</span>)}</div><div className="order-actions"><select value={o.status} onChange={e => onUpdate(o.id, { status: e.target.value as OrderStatus })}>{(Object.keys(STATUS_LABELS) as OrderStatus[]).map(s => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}</select><select value={o.paymentMethod ?? ''} onChange={e => onUpdate(o.id, { paymentMethod: e.target.value as any || undefined })}><option value="">Forma de pago</option><option value="efectivo">Efectivo</option><option value="yape">Yape</option><option value="plin">Plin</option><option value="transferencia">Transferencia</option></select><input type="number" min="0" max={o.total} step="0.01" value={o.paid} onChange={e => onUpdate(o.id, { paid: Number(e.target.value) })} /></div></div>)}</div>}
-  </section></div>;
-}
-
-function ProductsView({ products, onCreate, onUpdate }: { products: Product[]; onCreate: (form: any) => void; onUpdate: (id: string, patch: Partial<Product>) => void }) {
+function ProductsView({ products, onCreate, onUpdate, query }: { products: Product[]; onCreate: (form: { name: string; category: string; price: number; cost: number; stock: number; description: string }) => void; onUpdate: (id: string, patch: Partial<Product>) => void; query: string }) {
+  const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const [category, setCategory] = useState('all');
   const [open, setOpen] = useState(false);
+  const categories = Array.from(new Set(products.map(p => p.category).filter(Boolean)));
   const [form, setForm] = useState({ name: '', category: '', price: '', cost: '', stock: '0', description: '' });
-  const submit = () => {
-    const price = Number(form.price), cost = Number(form.cost || 0), stock = Number(form.stock || 0);
-    if (!form.name.trim() || !Number.isFinite(price) || price <= 0 || cost < 0) return;
-    onCreate({ ...form, price, cost, stock }); setForm({ name: '', category: '', price: '', cost: '', stock: '0', description: '' }); setOpen(false);
-  };
-  return <div className="content"><div className="page-actions"><button className="primary" onClick={() => setOpen(true)}>+ Nuevo producto</button></div><section className="product-grid">{products.map(p => <article className={p.active ? 'product-card' : 'product-card inactive'} key={p.id}><div className="product-placeholder">{p.name.slice(0,1)}</div><div className="product-card-body"><span className="eyebrow">{p.category}</span><h3>{p.name}</h3><p>{p.description || 'Sin descripción.'}</p><div className="price-row"><strong>{money(p.price)}</strong>{p.oldPrice && <del>{money(p.oldPrice)}</del>}</div><div className="mini-grid"><label>Costo<input type="number" min="0" step="0.01" value={p.cost} onChange={e => onUpdate(p.id, { cost: Math.max(0, Number(e.target.value)) })}/></label><label>Stock<input type="number" min="0" step="1" value={p.stock} onChange={e => onUpdate(p.id, { stock: Math.max(0, Number(e.target.value)) })}/></label></div><button className="link-button" onClick={() => onUpdate(p.id, { active: !p.active })}>{p.active ? 'Ocultar producto' : 'Volver a mostrar'}</button></div></article>)}</section>
-    {open && <Modal title="Nuevo producto" onClose={() => setOpen(false)}><label>Nombre<input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}/></label><label>Categoría<input value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}/></label><div className="form-grid"><label>Precio de venta<input type="number" min="0" step="0.01" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })}/></label><label>Costo real<input type="number" min="0" step="0.01" value={form.cost} onChange={e => setForm({ ...form, cost: e.target.value })}/></label></div><label>Stock<input type="number" min="0" value={form.stock} onChange={e => setForm({ ...form, stock: e.target.value })}/></label><label>Descripción<textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })}/></label><button className="primary wide" onClick={submit}>Guardar producto</button></Modal>}
+  const list = products.filter(p => (!query || (p.name + ' ' + p.category + ' ' + p.description).toLowerCase().includes(query.toLowerCase())) && (activeFilter === 'all' || (activeFilter === 'active' ? p.active : !p.active)) && (category === 'all' || p.category === category));
+  function submit() {
+    const price = number(form.price), cost = number(form.cost), stock = number(form.stock);
+    if (!form.name.trim() || price <= 0 || cost < 0 || stock < 0) return;
+    onCreate({ name: form.name, category: form.category, price, cost, stock, description: form.description });
+    setForm({ name: '', category: '', price: '', cost: '', stock: '0', description: '' });
+    setOpen(false);
+  }
+  return <div className="content">
+    <FilterBar title="Productos" count={list.length}>
+      <select value={activeFilter} onChange={e => setActiveFilter(e.target.value as 'all' | 'active' | 'inactive')}><option value="all">Todos</option><option value="active">Activos</option><option value="inactive">Ocultos</option></select>
+      <select value={category} onChange={e => setCategory(e.target.value)}><option value="all">Todas las categorías</option>{categories.map(c => <option key={c}>{c}</option>)}</select>
+      <button className="primary" onClick={() => setOpen(true)}>＋ Nuevo producto</button>
+    </FilterBar>
+    <section className="product-grid">{list.map(p => {
+      const margin = p.price > 0 ? ((p.price - p.cost) / p.price) * 100 : 0;
+      return <article className={'product-card ' + (!p.active ? 'inactive' : '')} key={p.id}>
+        <div className="product-placeholder">{p.name.slice(0, 1).toUpperCase()}</div>
+        <div className="product-card-body">
+          <span className="eyebrow">{p.category}</span><h3>{p.name}</h3><p>{p.description || 'Sin descripción.'}</p>
+          <div className="price-row"><strong>{money(p.price)}</strong><span className={margin < 30 ? 'warning-text' : 'success-text'}>{margin.toFixed(0)}% margen</span></div>
+          <div className="mini-grid">
+            <label>Precio<input type="number" min="0" step="0.01" value={p.price} onChange={e => onUpdate(p.id, { price: Math.max(0, number(e.target.value)) })} /></label>
+            <label>Costo<input type="number" min="0" step="0.01" value={p.cost} onChange={e => onUpdate(p.id, { cost: Math.max(0, number(e.target.value)) })} /></label>
+          </div>
+          <div className="mini-grid"><label>Stock<input type="number" min="0" step="1" value={p.stock} onChange={e => onUpdate(p.id, { stock: Math.max(0, number(e.target.value)) })} /></label><label>Estado<select value={p.active ? 'active' : 'inactive'} onChange={e => onUpdate(p.id, { active: e.target.value === 'active' })}><option value="active">Activo</option><option value="inactive">Oculto</option></select></label></div>
+        </div>
+      </article>;
+    })}</section>
+    {open ? <Modal title="Nuevo producto" onClose={() => setOpen(false)}>
+      <label>Nombre<input autoFocus value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></label>
+      <label>Categoría<input list="category-list" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} /><datalist id="category-list">{categories.map(c => <option key={c} value={c} />)}</datalist></label>
+      <div className="form-grid"><label>Precio<input type="number" min="0" step="0.01" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} /></label><label>Costo<input type="number" min="0" step="0.01" value={form.cost} onChange={e => setForm({ ...form, cost: e.target.value })} /></label><label>Stock<input type="number" min="0" step="1" value={form.stock} onChange={e => setForm({ ...form, stock: e.target.value })} /></label></div>
+      <label>Descripción<textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /></label>
+      <button className="primary wide" onClick={submit}>Guardar producto</button>
+    </Modal> : null}
   </div>;
 }
 
-function IngredientsView({ ingredients, onAdd, onStock }: { ingredients: Ingredient[]; onAdd: (f: Omit<Ingredient, 'id'>) => void; onStock: (id: string, d: number) => void }) {
+function IngredientsView({ ingredients, onAdd, onStock, query }: { ingredients: Ingredient[]; onAdd: (form: Omit<Ingredient, 'id'>) => void; onStock: (id: string, delta: number) => void; query: string }) {
+  const [lowOnly, setLowOnly] = useState(false);
+  const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ name: '', unit: 'g', unitCost: '', stock: '', minStock: '', supplier: '', expiration: '' });
-  const submit = () => {
-    if (!form.name.trim() || !form.unit) return;
-    onAdd({ ...form, unitCost: Number(form.unitCost || 0), stock: Number(form.stock || 0), minStock: Number(form.minStock || 0), supplier: form.supplier.trim(), expiration: form.expiration || undefined });
+  const list = ingredients.filter(i => (!query || (i.name + ' ' + i.supplier).toLowerCase().includes(query.toLowerCase())) && (!lowOnly || (i.stock <= i.minStock && i.minStock > 0)));
+  function submit() {
+    if (!form.name.trim() || !form.unit || number(form.unitCost) < 0 || number(form.stock) < 0 || number(form.minStock) < 0) return;
+    onAdd({ name: form.name.trim(), unit: form.unit.trim(), unitCost: number(form.unitCost), stock: number(form.stock), minStock: number(form.minStock), supplier: form.supplier.trim(), expiration: form.expiration || undefined });
     setForm({ name: '', unit: 'g', unitCost: '', stock: '', minStock: '', supplier: '', expiration: '' });
-  };
-  return <div className="content"><section className="panel"><div className="panel-head"><div><p className="eyebrow">NUEVO INGREDIENTE</p><h3>Inventario</h3></div></div><div className="form-grid five"><input placeholder="Ingrediente" value={form.name} onChange={e => setForm({...form,name:e.target.value})}/><input placeholder="Unidad" value={form.unit} onChange={e => setForm({...form,unit:e.target.value})}/><input placeholder="Costo unitario" type="number" value={form.unitCost} onChange={e => setForm({...form,unitCost:e.target.value})}/><input placeholder="Stock inicial" type="number" value={form.stock} onChange={e => setForm({...form,stock:e.target.value})}/><button className="primary" onClick={submit}>Agregar</button></div></section><section className="panel"><div className="table-wrap"><table><thead><tr><th>Ingrediente</th><th>Costo</th><th>Stock</th><th>Mínimo</th><th>Proveedor</th><th>Vence</th><th></th></tr></thead><tbody>{ingredients.map(i => <tr key={i.id}><td><strong>{i.name}</strong><span className="sub">{i.unit}</span></td><td>{money(i.unitCost)}</td><td className={i.stock <= i.minStock ? 'danger-text' : ''}>{i.stock} {i.unit}</td><td>{i.minStock}</td><td>{i.supplier || '—'}</td><td>{i.expiration || '—'}</td><td><button className="small-button" onClick={() => onStock(i.id, 1)}>+1</button><button className="small-button" onClick={() => onStock(i.id, -1)}>-1</button></td></tr>)}</tbody></table></div></section></div>;
+    setOpen(false);
+  }
+  return <div className="content">
+    <FilterBar title="Inventario" count={list.length}>
+      <label className="inline-check"><input type="checkbox" checked={lowOnly} onChange={e => setLowOnly(e.target.checked)} /> Solo stock bajo</label>
+      <button className="primary" onClick={() => setOpen(true)}>＋ Nuevo ingrediente</button>
+    </FilterBar>
+    <section className="panel">
+      {list.length ? <div className="table-wrap"><table><thead><tr><th>Ingrediente</th><th>Costo</th><th>Stock</th><th>Mínimo</th><th>Proveedor</th><th>Vence</th><th></th></tr></thead><tbody>{list.map(i => {
+        const low = i.stock <= i.minStock && i.minStock > 0;
+        return <tr key={i.id}><td><strong>{i.name}</strong><span className="sub">{i.unit}</span></td><td>{money(i.unitCost)}</td><td className={low ? 'danger-text' : ''}>{i.stock} {i.unit}</td><td>{i.minStock} {i.unit}</td><td>{i.supplier || '—'}</td><td>{i.expiration || '—'}</td><td className="nowrap"><button className="small-button" onClick={() => onStock(i.id, 1)}>＋</button><button className="small-button" onClick={() => onStock(i.id, -1)}>−</button></td></tr>;
+      })}</tbody></table></div> : <Empty text="No hay ingredientes que coincidan." />}
+    </section>
+    {open ? <Modal title="Nuevo ingrediente" onClose={() => setOpen(false)}>
+      <div className="form-grid"><label>Ingrediente<input autoFocus value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></label><label>Unidad<input value={form.unit} onChange={e => setForm({ ...form, unit: e.target.value })} placeholder="g, kg, ml, und..." /></label><label>Costo unitario<input type="number" min="0" step="0.001" value={form.unitCost} onChange={e => setForm({ ...form, unitCost: e.target.value })} /></label><label>Stock inicial<input type="number" min="0" step="0.001" value={form.stock} onChange={e => setForm({ ...form, stock: e.target.value })} /></label><label>Stock mínimo<input type="number" min="0" step="0.001" value={form.minStock} onChange={e => setForm({ ...form, minStock: e.target.value })} /></label><label>Proveedor<input value={form.supplier} onChange={e => setForm({ ...form, supplier: e.target.value })} /></label></div>
+      <label>Fecha de vencimiento<input type="date" value={form.expiration} onChange={e => setForm({ ...form, expiration: e.target.value })} /></label>
+      <button className="primary wide" onClick={submit}>Guardar ingrediente</button>
+    </Modal> : null}
+  </div>;
 }
 
 function FinanceView({ moves, addMoney, balance }: { moves: MoneyMove[]; addMoney: (m: Omit<MoneyMove, 'id' | 'date'>) => void; balance: number }) {
@@ -828,54 +1207,124 @@ function FinanceView({ moves, addMoney, balance }: { moves: MoneyMove[]; addMone
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('');
-  const submit = () => { const n=Number(amount); if(!Number.isFinite(n)||n<=0||!description.trim()) return; addMoney({type,amount:n,description:description.trim(),category:category.trim()||MOVE_LABELS[type]}); setAmount('');setDescription('');setCategory(''); };
-  return <div className="content"><div className="metrics"><Metric label="Saldo de caja" value={money(balance)} /><Metric label="Movimientos" value={String(moves.length)} /></div><div className="grid-2"><section className="panel"><div className="panel-head"><div><p className="eyebrow">REGISTRAR</p><h3>Movimiento de dinero</h3></div></div><div className="form-grid"><select value={type} onChange={e=>setType(e.target.value as MoneyMoveType)}>{(Object.keys(MOVE_LABELS) as MoneyMoveType[]).map(k=><option value={k} key={k}>{MOVE_LABELS[k]}</option>)}</select><input type="number" min="0" step="0.01" placeholder="Monto" value={amount} onChange={e=>setAmount(e.target.value)}/></div><input placeholder="Descripción" value={description} onChange={e=>setDescription(e.target.value)}/><input placeholder="Categoría" value={category} onChange={e=>setCategory(e.target.value)}/><button className="primary wide" onClick={submit}>Registrar movimiento</button></section><section className="panel"><div className="panel-head"><div><p className="eyebrow">HISTORIAL</p><h3>Últimos movimientos</h3></div></div>{moves.slice(0,12).map(m=><div className="list-row" key={m.id}><div><strong>{m.description}</strong><span>{MOVE_LABELS[m.type]} · {new Date(m.date).toLocaleDateString('es-PE')}</span></div><b className={['gasto','retiro','pago_deuda'].includes(m.type)?'danger-text':''}>{['gasto','retiro','pago_deuda'].includes(m.type)?'-':''}{money(m.amount)}</b></div>)}</section></div></div>;
+  const [filter, setFilter] = useState<'all' | MoneyMoveType>('all');
+  const list = moves.filter(m => filter === 'all' || m.type === filter);
+  const submit = () => {
+    const n = number(amount);
+    if (n <= 0 || !description.trim()) return;
+    addMoney({ type, amount: n, description: description.trim(), category: category.trim() || MOVE_LABELS[type], method: 'efectivo' });
+    setAmount(''); setDescription(''); setCategory('');
+  };
+  return <div className="content">
+    <div className="metrics"><Metric label="Saldo de caja" value={money(balance)} /><Metric label="Movimientos" value={String(moves.length)} /></div>
+    <div className="grid-2">
+      <section className="panel"><div className="panel-head"><div><p className="eyebrow">REGISTRAR</p><h3>Movimiento</h3></div></div>
+        <div className="form-grid"><label>Tipo<select value={type} onChange={e => setType(e.target.value as MoneyMoveType)}>{(Object.keys(MOVE_LABELS) as MoneyMoveType[]).map(k => <option value={k} key={k}>{MOVE_LABELS[k]}</option>)}</select></label><label>Monto<input type="number" min="0" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} /></label></div>
+        <label>Descripción<input value={description} onChange={e => setDescription(e.target.value)} placeholder="Ej. compra de harina" /></label>
+        <label>Categoría<input value={category} onChange={e => setCategory(e.target.value)} placeholder="Se completa sola si queda vacía" /></label>
+        <button className="primary wide" onClick={submit}>Registrar movimiento</button>
+      </section>
+      <section className="panel"><FilterBar title="Historial" count={list.length}><select value={filter} onChange={e => setFilter(e.target.value as 'all' | MoneyMoveType)}><option value="all">Todos</option>{(Object.keys(MOVE_LABELS) as MoneyMoveType[]).map(k => <option key={k}>{MOVE_LABELS[k]}</option>)}</select></FilterBar>
+        <div className="compact-list">{list.slice(0, 20).map(m => <div className="compact-row" key={m.id}><span><strong>{m.description}</strong><small>{MOVE_LABELS[m.type]} · {formatDate(m.date)}</small></span><b className={['gasto','retiro','pago_deuda'].includes(m.type) ? 'danger-text' : 'success-text'}>{['gasto','retiro','pago_deuda'].includes(m.type) ? '-' : '+'}{money(m.amount)}</b></div>)}</div>
+      </section>
+    </div>
+  </div>;
 }
 
-function DebtsView({ debts, setDebts }: { debts: Debt[]; setDebts: (d: Debt[]) => void }) {
-  const [type,setType]=useState<'cobrar'|'pagar'>('cobrar');
-  const [person,setPerson]=useState('');const [amount,setAmount]=useState('');const [desc,setDesc]=useState('');
-  const submit=()=>{const n=Number(amount);if(!person.trim()||!Number.isFinite(n)||n<=0)return;setDebts([{id:uid('debt'),type,person:person.trim(),amount:n,description:desc.trim(),paid:false},...debts]);setPerson('');setAmount('');setDesc('');};
-  return <div className="content"><section className="panel"><div className="form-grid five"><select value={type} onChange={e=>setType(e.target.value as any)}><option value="cobrar">Por cobrar</option><option value="pagar">Por pagar</option></select><input placeholder="Persona / proveedor" value={person} onChange={e=>setPerson(e.target.value)}/><input type="number" placeholder="Monto" value={amount} onChange={e=>setAmount(e.target.value)}/><input placeholder="Descripción" value={desc} onChange={e=>setDesc(e.target.value)}/><button className="primary" onClick={submit}>Guardar</button></div></section><section className="panel"><div className="table-wrap"><table><thead><tr><th>Tipo</th><th>Persona</th><th>Monto</th><th>Descripción</th><th>Estado</th><th></th></tr></thead><tbody>{debts.map(d=><tr key={d.id}><td><span className="pill">{d.type==='cobrar'?'Por cobrar':'Por pagar'}</span></td><td>{d.person}</td><td>{money(d.amount)}</td><td>{d.description||'—'}</td><td>{d.paid?'Pagado':'Pendiente'}</td><td><button className="small-button" onClick={()=>setDebts(debts.map(x=>x.id===d.id?{...x,paid:!x.paid}:x))}>{d.paid?'Reabrir':'Marcar pagado'}</button></td></tr>)}</tbody></table></div></section></div>;
+function DebtsView({ debts, setDebts }: { debts: Debt[]; setDebts: (items: Debt[]) => void }) {
+  const [type, setType] = useState<'cobrar' | 'pagar'>('cobrar');
+  const [person, setPerson] = useState('');
+  const [amount, setAmount] = useState('');
+  const [description, setDescription] = useState('');
+  const [filter, setFilter] = useState<'all' | 'pending' | 'paid'>('pending');
+  const list = debts.filter(d => filter === 'all' || (filter === 'pending' ? !d.paid : d.paid));
+  const submit = () => {
+    const n = number(amount);
+    if (!person.trim() || n <= 0) return;
+    setDebts([{ id: uid('debt'), type, person: person.trim(), amount: n, description: description.trim(), paid: false }, ...debts]);
+    setPerson(''); setAmount(''); setDescription('');
+  };
+  return <div className="content">
+    <section className="panel"><div className="form-grid five"><select value={type} onChange={e => setType(e.target.value as 'cobrar' | 'pagar')}><option value="cobrar">Por cobrar</option><option value="pagar">Por pagar</option></select><input placeholder="Persona / proveedor" value={person} onChange={e => setPerson(e.target.value)} /><input type="number" min="0" step="0.01" placeholder="Monto" value={amount} onChange={e => setAmount(e.target.value)} /><input placeholder="Descripción" value={description} onChange={e => setDescription(e.target.value)} /><button className="primary" onClick={submit}>Guardar</button></div></section>
+    <section className="panel"><FilterBar title="Cuentas" count={list.length}><select value={filter} onChange={e => setFilter(e.target.value as 'all' | 'pending' | 'paid')}><option value="pending">Pendientes</option><option value="paid">Pagadas</option><option value="all">Todas</option></select></FilterBar>
+      <div className="table-wrap"><table><thead><tr><th>Tipo</th><th>Persona</th><th>Monto</th><th>Descripción</th><th>Estado</th><th></th></tr></thead><tbody>{list.map(d => <tr key={d.id}><td><span className="pill">{d.type === 'cobrar' ? 'Cobrar' : 'Pagar'}</span></td><td>{d.person}</td><td>{money(d.amount)}</td><td>{d.description || '—'}</td><td>{d.paid ? 'Pagado' : 'Pendiente'}</td><td><button className="small-button" onClick={() => setDebts(debts.map(x => x.id === d.id ? { ...x, paid: !x.paid } : x))}>{d.paid ? 'Reabrir' : 'Marcar pagado'}</button></td></tr>)}</tbody></table></div>
+    </section>
+  </div>;
 }
 
 function LossesView({ state, setState }: { state: BusinessState; setState: React.Dispatch<React.SetStateAction<BusinessState | null>> }) {
-  const [item,setItem]=useState('');const [quantity,setQuantity]=useState('');const [value,setValue]=useState('');const [reason,setReason]=useState('');
-  const submit=()=>{const q=Number(quantity),v=Number(value);if(!item.trim()||q<=0||v<0)return;setState(prev=>prev?{...prev,losses:[{id:uid('loss'),date:new Date().toISOString(),item:item.trim(),quantity:q,value:v,reason:reason.trim()},...prev.losses]}:prev);setItem('');setQuantity('');setValue('');setReason('');};
-  return <div className="content"><section className="panel"><div className="form-grid five"><input placeholder="Producto / ingrediente" value={item} onChange={e=>setItem(e.target.value)}/><input type="number" placeholder="Cantidad" value={quantity} onChange={e=>setQuantity(e.target.value)}/><input type="number" step="0.01" placeholder="Valor perdido" value={value} onChange={e=>setValue(e.target.value)}/><input placeholder="Motivo" value={reason} onChange={e=>setReason(e.target.value)}/><button className="primary" onClick={submit}>Registrar</button></div></section><section className="panel"><div className="table-wrap"><table><thead><tr><th>Fecha</th><th>Elemento</th><th>Cantidad</th><th>Valor</th><th>Motivo</th></tr></thead><tbody>{state.losses.map(l=><tr key={l.id}><td>{new Date(l.date).toLocaleDateString('es-PE')}</td><td>{l.item}</td><td>{l.quantity}</td><td>{money(l.value)}</td><td>{l.reason||'—'}</td></tr>)}</tbody></table></div></section></div>;
+  const [item, setItem] = useState('');
+  const [quantity, setQuantity] = useState('');
+  const [value, setValue] = useState('');
+  const [reason, setReason] = useState('');
+  const submit = () => {
+    const q = number(quantity), v = number(value);
+    if (!item.trim() || q <= 0 || v < 0) return;
+    setState(prev => prev ? { ...prev, losses: [{ id: uid('loss'), date: new Date().toISOString(), item: item.trim(), quantity: q, value: v, reason: reason.trim() }, ...prev.losses], lastLocalChangeAt: new Date().toISOString() } : prev);
+    setItem(''); setQuantity(''); setValue(''); setReason('');
+  };
+  return <div className="content"><section className="panel"><div className="form-grid five"><input placeholder="Producto / ingrediente" value={item} onChange={e => setItem(e.target.value)} /><input type="number" min="0" step="0.001" placeholder="Cantidad" value={quantity} onChange={e => setQuantity(e.target.value)} /><input type="number" min="0" step="0.01" placeholder="Valor perdido" value={value} onChange={e => setValue(e.target.value)} /><input placeholder="Motivo" value={reason} onChange={e => setReason(e.target.value)} /><button className="primary" onClick={submit}>Registrar</button></div></section><section className="panel"><div className="table-wrap"><table><thead><tr><th>Fecha</th><th>Elemento</th><th>Cantidad</th><th>Valor</th><th>Motivo</th></tr></thead><tbody>{state.losses.map(l => <tr key={l.id}><td>{formatDate(l.date)}</td><td>{l.item}</td><td>{l.quantity}</td><td>{money(l.value)}</td><td>{l.reason || '—'}</td></tr>)}</tbody></table></div></section></div>;
 }
 
-function ReportsView({ state }: { state: BusinessState }) {
-  const sales=state.money.filter(m=>m.type==='venta').reduce((s,m)=>s+m.amount,0);
-  const expenses=state.money.filter(m=>m.type==='gasto').reduce((s,m)=>s+m.amount,0);
-  const investments=state.money.filter(m=>m.type==='inversion').reduce((s,m)=>s+m.amount,0);
-  const profit=state.products.reduce((s,p)=>s+(p.price-p.cost)*p.stock,0)+sales-expenses;
-  return <div className="content report-print"><div className="page-actions"><button className="secondary" onClick={()=>window.print()}>Imprimir / Guardar PDF</button><button className="secondary" onClick={()=>csvDownload('diego-bakery-movimientos.csv',state.money.map(m=>({fecha:m.date,tipo:m.type,monto:m.amount,descripcion:m.description,categoria:m.category})))}>Exportar Excel/CSV</button></div><section className="panel"><div className="report-header"><div><p className="eyebrow">{state.settings.businessName}</p><h3>Resumen financiero</h3><span>{new Date().toLocaleDateString('es-PE')}</span></div></div><div className="metrics"><Metric label="Ventas" value={money(sales)}/><Metric label="Gastos" value={money(expenses)}/><Metric label="Inversiones" value={money(investments)}/><Metric label="Resultado estimado" value={money(profit)}/></div></section><section className="panel"><h3>Inventario</h3><div className="table-wrap"><table><thead><tr><th>Ingrediente</th><th>Stock</th><th>Costo unitario</th><th>Proveedor</th></tr></thead><tbody>{state.ingredients.map(i=><tr key={i.id}><td>{i.name}</td><td>{i.stock} {i.unit}</td><td>{money(i.unitCost)}</td><td>{i.supplier||'—'}</td></tr>)}</tbody></table></div></section></div>;
+function ReportsView({ state, derived }: { state: BusinessState; derived: any }) {
+  const exportRows = state.money.map(m => ({ fecha: m.date, tipo: MOVE_LABELS[m.type], monto: m.amount, descripcion: m.description, categoria: m.category, metodo: m.method || '' }));
+  const low = state.ingredients.filter(i => i.stock <= i.minStock && i.minStock > 0);
+  return <div className="content report-print">
+    <div className="page-actions"><button className="secondary" onClick={() => window.print()}>Imprimir / PDF</button><button className="secondary" onClick={() => csvDownload('diego-bakery-movimientos.csv', exportRows)}>Exportar CSV</button></div>
+    <div className="metrics"><Metric label="Ventas" value={money(derived.sales)} /><Metric label="Gastos" value={money(derived.expenses)} /><Metric label="Resultado estimado" value={money(derived.estimatedProfit)} /><Metric label="Inventario" value={money(derived.inventoryValue)} /></div>
+    <div className="grid-2"><section className="panel"><div className="panel-head"><div><p className="eyebrow">VENTAS</p><h3>Productos más vendidos</h3></div></div>{derived.topProducts.length ? <div className="ranking-list">{derived.topProducts.map((p: any, idx: number) => <div className="ranking-row" key={p.name}><span className="rank">{idx + 1}</span><span><strong>{p.name}</strong><small>{p.quantity} unidad(es)</small></span><b>{money(p.revenue)}</b></div>)}</div> : <Empty text="Aún no hay ventas por producto." />}</section><section className="panel"><div className="panel-head"><div><p className="eyebrow">STOCK</p><h3>Ingredientes bajo mínimo</h3></div></div>{low.length ? low.map(i => <div className="list-row" key={i.id}><div><strong>{i.name}</strong><span>{i.supplier || 'Sin proveedor'}</span></div><b className="danger-text">{i.stock} {i.unit}</b></div>) : <Empty text="Inventario dentro de los mínimos." />}</section></div>
+    <section className="panel"><h3>Resumen calculado</h3><div className="detail-grid"><div><span>Pedidos entregados</span><b>{state.orders.filter(o => o.status === 'entregada').length}</b></div><div><span>Ventas cobradas</span><b>{money(derived.sales)}</b></div><div><span>Ventas de pedidos entregados</span><b>{money(derived.completedRevenue)}</b></div><div><span>Ticket promedio</span><b>{money(derived.averageTicket)}</b></div></div></section>
+  </div>;
 }
 
-function SettingsView({ state, update, exportBackup, onRestore }: { state: BusinessState; update: (p: Partial<BusinessState['settings']>) => void; exportBackup: () => void; onRestore: (file: File) => Promise<void> }) {
-  return <div className="content"><section className="panel"><div className="panel-head"><div><p className="eyebrow">NEGOCIO</p><h3>Configuración general</h3></div></div><div className="form-grid"><label>Nombre del negocio<input value={state.settings.businessName} onChange={e=>update({businessName:e.target.value})}/></label><label>Tema<select value={state.settings.theme} onChange={e=>update({theme:e.target.value as any})}><option value="system">Sistema</option><option value="light">Claro</option><option value="dark">Oscuro</option></select></label><label>WhatsApp<input value={state.settings.whatsapp||''} onChange={e=>update({whatsapp:e.target.value})}/></label><label>Dirección<input value={state.settings.businessAddress||''} onChange={e=>update({businessAddress:e.target.value})}/></label></div></section><section className="panel"><div className="panel-head"><div><p className="eyebrow">VENTAS</p><h3>Horarios y entrega</h3></div></div><label className="toggle-row"><span>Ventas escolares</span><input type="checkbox" checked={state.settings.schoolSales} onChange={e=>update({schoolSales:e.target.checked})}/></label>{state.settings.schoolWindows.map((w,idx)=><div className="form-grid" key={w.label}><input value={w.label} onChange={e=>update({schoolWindows:state.settings.schoolWindows.map((x,i)=>i===idx?{...x,label:e.target.value}:x)})}/><input type="time" value={w.start} onChange={e=>update({schoolWindows:state.settings.schoolWindows.map((x,i)=>i===idx?{...x,start:e.target.value}:x)})}/><input type="time" value={w.end} onChange={e=>update({schoolWindows:state.settings.schoolWindows.map((x,i)=>i===idx?{...x,end:e.target.value}:x)})}/></div>)}<label className="toggle-row"><span>Entregas habilitadas</span><input type="checkbox" checked={state.settings.deliveryEnabled} onChange={e=>update({deliveryEnabled:e.target.checked})}/></label><label className="toggle-row"><span>Respaldo automático en la nube</span><input type="checkbox" checked={state.settings.autoBackup} onChange={e=>update({autoBackup:e.target.checked})}/></label></section><section className="panel"><div className="panel-head"><div><p className="eyebrow">RESPALDOS</p><h3>Protege tus datos</h3></div></div><div className="button-row"><button className="secondary" onClick={exportBackup}>Descargar respaldo JSON</button><label className="secondary file-button">Restaurar respaldo<input type="file" accept=".json,application/json" onChange={e=>{const file=e.target.files?.[0];if(file)void onRestore(file)}}/></label></div><p className="muted small">El respaldo local incluye productos, pedidos, caja, deudas, pérdidas y configuración. El respaldo en nube se intenta automáticamente cuando hay conexión.</p></section></div>;
+function SettingsView({ state, update, exportBackup, onRestore, healthCheck }: { state: BusinessState; update: (patch: Partial<BusinessState['settings']>) => void; exportBackup: () => void; onRestore: (file: File) => Promise<void>; healthCheck: () => Promise<void> }) {
+  return <div className="content">
+    <section className="panel"><div className="panel-head"><div><p className="eyebrow">NEGOCIO</p><h3>Configuración</h3></div></div>
+      <div className="form-grid"><label>Nombre del negocio<input value={state.settings.businessName} onChange={e => update({ businessName: e.target.value })} /></label><label>Tema<select value={state.settings.theme} onChange={e => update({ theme: e.target.value as 'light' | 'dark' | 'system' })}><option value="system">Sistema</option><option value="light">Claro</option><option value="dark">Oscuro</option></select></label><label>WhatsApp<input value={state.settings.whatsapp || ''} onChange={e => update({ whatsapp: normalizePhone(e.target.value) })} /></label><label>Dirección<input value={state.settings.businessAddress || ''} onChange={e => update({ businessAddress: e.target.value })} /></label></div>
+    </section>
+    <section className="panel"><div className="panel-head"><div><p className="eyebrow">AUTOMATIZACIÓN</p><h3>Reglas del negocio</h3></div></div>
+      <label className="toggle-row"><span><b>Respaldo automático</b><small>Guarda el estado en la nube cuando hay conexión.</small></span><input type="checkbox" checked={state.settings.autoBackup} onChange={e => update({ autoBackup: e.target.checked })} /></label>
+      <label className="toggle-row"><span><b>Entregas habilitadas</b><small>Agrega el costo de delivery al carrito cuando hay dirección.</small></span><input type="checkbox" checked={state.settings.deliveryEnabled} onChange={e => update({ deliveryEnabled: e.target.checked })} /></label>
+      <label className="toggle-row"><span><b>Notificaciones</b><small>Crea avisos por pedidos y stock bajo.</small></span><input type="checkbox" checked={state.settings.notificationEnabled} onChange={e => update({ notificationEnabled: e.target.checked })} /></label>
+      <div className="form-grid"><label>Costo de mano de obra por hora<input type="number" min="0" step="0.01" value={state.settings.laborRatePerHour} onChange={e => update({ laborRatePerHour: Math.max(0, number(e.target.value)) })} /></label><label>Costo de utilidad por defecto<input type="number" min="0" step="0.01" value={state.settings.defaultUtilityCost} onChange={e => update({ defaultUtilityCost: Math.max(0, number(e.target.value)) })} /></label><label>Empaque por defecto<input type="number" min="0" step="0.01" value={state.settings.defaultPackagingCost} onChange={e => update({ defaultPackagingCost: Math.max(0, number(e.target.value)) })} /></label><label>Delivery<input type="number" min="0" step="0.01" value={state.settings.deliveryFee} onChange={e => update({ deliveryFee: Math.max(0, number(e.target.value)) })} /></label><label>Puntos por S/<input type="number" min="0" step="0.1" value={state.settings.loyaltyPointsPerSol} onChange={e => update({ loyaltyPointsPerSol: Math.max(0, number(e.target.value)) })} /></label></div>
+    </section>
+    <section className="panel"><div className="panel-head"><div><p className="eyebrow">SALUD DEL SISTEMA</p><h3>Conexión y respaldos</h3></div></div><div className="button-row"><button className="secondary" onClick={() => void healthCheck()}>Comprobar servidor</button><button className="secondary" onClick={exportBackup}>Descargar respaldo</button><label className="secondary file-button">Restaurar respaldo<input type="file" accept=".json,application/json" onChange={e => { const file = e.target.files?.[0]; if (file) void onRestore(file); }} /></label></div><p className="muted small">La aplicación guarda localmente primero y sincroniza después. Una falla de Internet no debe borrar tus datos.</p></section>
+  </div>;
 }
 
-function CustomerView({ products, cart, addToCart, addCombo, customer, setCustomer, promoCode, setPromoCode, promotions, combos, submit, onAdmin, theme, message, settings }: { products: Product[]; cart: OrderItem[]; addToCart: (p: Product) => void; addCombo: (c: BusinessState['combos'][number]) => void; customer: any; setCustomer: (v:any)=>void; promoCode: string; setPromoCode: (v:string)=>void; promotions: BusinessState['promotions']; combos: BusinessState['combos']; submit:()=>void; onAdmin:()=>void; theme:string; message:string; settings: BusinessState['settings'] }) {
-  const subtotal=cart.reduce((s,i)=>s+i.subtotal,0);
-  const activePromo=promotions.find(p=>p.active && p.code && p.code.toUpperCase()===promoCode.trim().toUpperCase());
-  const quantity=cart.reduce((s,i)=>s+i.quantity,0);
-  let discount=0;
-  if(activePromo?.type==='percent') discount=subtotal*Math.min(100,activePromo.value)/100;
-  if(activePromo?.type==='fixed') discount=Math.min(subtotal,activePromo.value);
-  if(activePromo?.type==='quantity' && quantity >= (activePromo.minQuantity||1)) discount=Math.min(subtotal,activePromo.value);
-  if(activePromo?.type==='date_price') discount=Math.max(0,subtotal-activePromo.value);
-  const deliveryFee=settings.deliveryEnabled && customer.address.trim()?Math.max(0,settings.deliveryFee):0;
-  const total=Math.max(0,subtotal-discount+deliveryFee);
-  const visibleCombos=combos.filter(c=>c.active);
-  return <div className={`customer-shell ${theme}`}><header className="customer-top"><div className="brand-line"><div className="brand-mark small">DB</div><div><strong>Diego Bakery</strong><span>Postres artesanales</span></div></div><button className="link-button" onClick={onAdmin}>Administrar</button></header><div className="customer-hero"><p className="eyebrow">CATÁLOGO</p><h1>Hecho en casa, pensado para ti.</h1><p>Elige tus productos. El pedido se guarda incluso sin conexión.</p></div><section className="customer-products">{products.map(p=><article className="shop-card" key={p.id}><div className="product-placeholder">{p.name.slice(0,1)}</div><div className="shop-card-body"><span className="eyebrow">{p.category}</span><h3>{p.name}</h3><p>{p.description}</p><div className="price-row"><strong>{money(p.price)}</strong>{p.oldPrice&&<del>{money(p.oldPrice)}</del>}</div>{p.flavors.length>0&&<span className="sub">Sabores: {p.flavors.join(', ')}</span>}{p.sizes.length>0&&<span className="sub">Tamaños: {p.sizes.join(', ')}</span>}<button className="primary wide" onClick={()=>addToCart(p)}>Agregar</button></div></article>)}</section>{visibleCombos.length>0&&<section className="customer-products">{visibleCombos.map(combo=><article className="shop-card" key={combo.id}><div className="shop-card-body"><span className="eyebrow">COMBO</span><h3>{combo.name}</h3><p>{combo.productIds.map(id=>products.find(p=>p.id===id)?.name).filter(Boolean).join(' + ')}</p><strong>{money(combo.price)}</strong><button className="primary wide" onClick={()=>addCombo(combo)}>Agregar combo</button></div></article>)}</section>}<section className="cart-panel"><div><p className="eyebrow">PEDIDO</p><h2>Tu carrito</h2>{cart.length===0?<Empty text="Agrega un producto para comenzar."/>:cart.map(i=><div className="list-row" key={i.productId}><div><strong>{i.productName}</strong><span>{i.quantity} unidad(es)</span></div><b>{money(i.subtotal)}</b></div>)}{discount>0&&<div className="list-row"><span>Descuento</span><b>-{money(discount)}</b></div>}{deliveryFee>0&&<div className="list-row"><span>Entrega</span><b>{money(deliveryFee)}</b></div>}<div className="cart-total"><span>Total</span><strong>{money(total)}</strong></div></div><div className="customer-form"><input placeholder="Nombre" value={customer.name} onChange={e=>setCustomer({...customer,name:e.target.value})}/><input placeholder="Teléfono" value={customer.phone} onChange={e=>setCustomer({...customer,phone:e.target.value})}/><input placeholder="Dirección (opcional)" value={customer.address} onChange={e=>setCustomer({...customer,address:e.target.value})}/><input placeholder="Código promocional" value={promoCode} onChange={e=>setPromoCode(e.target.value.toUpperCase())}/><textarea placeholder="Notas o personalización" value={customer.notes} onChange={e=>setCustomer({...customer,notes:e.target.value})}/><button className="primary wide" onClick={submit}>Enviar pedido</button>{settings.whatsapp&&<button className="secondary wide" onClick={()=>window.open('https://wa.me/'+settings.whatsapp!.replace(/\\D/g,''),'_blank','noopener,noreferrer')}>Contactar por WhatsApp</button>}{customer.address.trim()&&<button className="secondary wide" onClick={()=>window.open('https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(customer.address),'_blank','noopener,noreferrer')}>Abrir dirección en mapa</button>}{message&&<div className="notice">{message}</div>}</div></section></div>;
+function GlobalSearchOverlay({ state, query, onOpen, onClose }: { state: BusinessState; query: string; onOpen: (section: Section) => void; onClose: () => void }) {
+  const q = query.toLowerCase().trim();
+  const results: Array<{ section: Section; label: string; detail: string }> = [];
+  state.products.filter(p => (p.name + ' ' + p.category).toLowerCase().includes(q)).slice(0, 5).forEach(p => results.push({ section: 'productos', label: p.name, detail: 'Producto · ' + money(p.price) }));
+  state.ingredients.filter(i => (i.name + ' ' + i.supplier).toLowerCase().includes(q)).slice(0, 5).forEach(i => results.push({ section: 'ingredientes', label: i.name, detail: 'Ingrediente · ' + i.stock + ' ' + i.unit }));
+  state.customers.filter(c => (c.name + ' ' + c.phone).toLowerCase().includes(q)).slice(0, 5).forEach(c => results.push({ section: 'clientes', label: c.name, detail: 'Cliente · ' + c.phone }));
+  state.orders.filter(o => (o.customerName + ' ' + o.customerPhone + ' ' + o.id).toLowerCase().includes(q)).slice(0, 5).forEach(o => results.push({ section: 'pedidos', label: o.customerName, detail: 'Pedido · ' + money(o.total) }));
+  return <div className="global-search-results"><div className="search-head"><strong>Resultados</strong><button className="icon-button" onClick={onClose}>×</button></div>{results.length ? results.slice(0, 12).map((r, i) => <button className="search-result" key={r.section + r.label + i} onClick={() => { onOpen(r.section); onClose(); }}><span><strong>{r.label}</strong><small>{r.detail}</small></span><span>→</span></button>) : <Empty text="No hay resultados." />}</div>;
 }
 
-function Modal({ title, onClose, children }: { title:string; onClose:()=>void; children:React.ReactNode }) {
-  return <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}><div className="modal"><div className="modal-head"><h3>{title}</h3><button className="icon-button" onClick={onClose}>×</button></div><div className="modal-body">{children}</div></div></div>;
+function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  return <div className="modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}><div className="modal"><div className="modal-head"><h3>{title}</h3><button className="icon-button" onClick={onClose}>×</button></div><div className="modal-body">{children}</div></div></div>;
 }
 
-function Empty({ text }: { text:string }) {
-  return <div className="empty"><span>{text}</span></div>;
+function CustomerView({ products, cart, addToCart, customer, setCustomer, promoCode, setPromoCode, promotions, combos, submit, onAdmin, theme, message, settings, addCombo }: any) {
+  const subtotal = cart.reduce((s: number, i: OrderItem) => s + number(i.subtotal), 0);
+  const quantity = cart.reduce((s: number, i: OrderItem) => s + number(i.quantity), 0);
+  const promo = promotions.find((p: any) => p.active && p.code && p.code.toUpperCase() === promoCode.trim().toUpperCase());
+  let discount = 0;
+  if (promo?.type === 'percent') discount = subtotal * Math.min(100, number(promo.value)) / 100;
+  if (promo?.type === 'fixed') discount = Math.min(subtotal, number(promo.value));
+  if (promo?.type === 'quantity' && quantity >= number(promo.minQuantity, 1)) discount = Math.min(subtotal, number(promo.value));
+  if (promo?.type === 'date_price') discount = Math.max(0, subtotal - number(promo.value));
+  const deliveryFee = settings.deliveryEnabled && customer.address.trim() ? number(settings.deliveryFee) : 0;
+  const total = Math.max(0, subtotal - discount + deliveryFee);
+  return <div className={'customer-shell ' + theme}>
+    <header className="customer-top"><div className="brand-line"><div className="brand-mark small">DB</div><div><strong>{settings.businessName}</strong><span>Postres artesanales</span></div></div><button className="link-button" onClick={onAdmin}>Administrar</button></header>
+    <div className="customer-hero"><p className="eyebrow">CATÁLOGO</p><h1>Hecho en casa, pensado para ti.</h1><p>Elige tus productos y el total se calcula automáticamente.</p></div>
+    <section className="customer-tools"><input placeholder="Buscar producto..." onChange={e => { const value = e.target.value.toLowerCase(); document.querySelectorAll<HTMLElement>('.shop-card').forEach(card => { card.hidden = !card.innerText.toLowerCase().includes(value); }); }} /></section>
+    <section className="customer-products">{products.map((p: Product) => <article className="shop-card" key={p.id}><div className="product-placeholder">{p.name.slice(0, 1)}</div><div className="shop-card-body"><span className="eyebrow">{p.category}</span><h3>{p.name}</h3><p>{p.description}</p><div className="price-row"><strong>{money(p.price)}</strong>{p.oldPrice ? <del>{money(p.oldPrice)}</del> : null}</div><button className="primary wide" onClick={() => addToCart(p)}>Agregar al carrito</button></div></article>)}</section>
+    {combos.filter((c: any) => c.active).length ? <section className="customer-products">{combos.filter((c: any) => c.active).map((combo: any) => <article className="shop-card combo-card" key={combo.id}><div className="shop-card-body"><span className="eyebrow">COMBO</span><h3>{combo.name}</h3><p>{combo.productIds.map((id: string) => products.find((p: Product) => p.id === id)?.name).filter(Boolean).join(' + ')}</p><div className="price-row"><strong>{money(combo.price)}</strong></div><button className="primary wide" onClick={() => addCombo(combo)}>Agregar combo</button></div></article>)}</section> : null}
+    <section className="cart-panel"><div><p className="eyebrow">PEDIDO</p><h2>Tu carrito</h2>{cart.length ? cart.map((i: OrderItem) => <div className="list-row" key={i.productId}><div><strong>{i.productName}</strong><span>{i.quantity} × {money(i.unitPrice)}</span></div><b>{money(i.subtotal)}</b></div>) : <Empty text="Agrega productos para empezar." />}<div className="list-row"><span>Subtotal</span><b>{money(subtotal)}</b></div>{discount > 0 ? <div className="list-row"><span>Descuento</span><b>-{money(discount)}</b></div> : null}{deliveryFee > 0 ? <div className="list-row"><span>Delivery</span><b>{money(deliveryFee)}</b></div> : null}<div className="cart-total"><span>Total</span><strong>{money(total)}</strong></div></div><div className="customer-form"><input placeholder="Nombre" value={customer.name} onChange={e => setCustomer({ ...customer, name: e.target.value })} /><input placeholder="Teléfono" value={customer.phone} onChange={e => setCustomer({ ...customer, phone: e.target.value })} /><input placeholder="Dirección" value={customer.address} onChange={e => setCustomer({ ...customer, address: e.target.value })} /><input placeholder="Código promocional" value={promoCode} onChange={e => setPromoCode(e.target.value.toUpperCase())} /><textarea placeholder="Notas o personalización" value={customer.notes} onChange={e => setCustomer({ ...customer, notes: e.target.value })} /><button className="primary wide" disabled={!cart.length} onClick={submit}>Enviar pedido</button>{settings.whatsapp ? <button className="secondary wide" onClick={() => window.open('https://wa.me/' + normalizePhone(settings.whatsapp), '_blank', 'noopener,noreferrer')}>WhatsApp</button> : null}{message ? <div className="notice">{message}</div> : null}</div></section>
+  </div>;
 }
+
+export default App;
