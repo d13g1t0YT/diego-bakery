@@ -4,6 +4,31 @@ const DB_NAME = 'diego-bakery-db';
 const STORE_NAME = 'state';
 const STATE_KEY = 'business';
 
+function normalizeState(input: BusinessState): BusinessState {
+  const base = defaultState();
+  return {
+    ...base,
+    ...input,
+    products: Array.isArray(input.products) ? input.products : base.products,
+    ingredients: Array.isArray(input.ingredients) ? input.ingredients : [],
+    recipes: Array.isArray(input.recipes) ? input.recipes : [],
+    suppliers: Array.isArray(input.suppliers) ? input.suppliers : [],
+    customers: Array.isArray(input.customers) ? input.customers : [],
+    promotions: Array.isArray(input.promotions) ? input.promotions : [],
+    combos: Array.isArray(input.combos) ? input.combos : [],
+    loyaltyRewards: Array.isArray(input.loyaltyRewards) ? input.loyaltyRewards : [],
+    services: Array.isArray(input.services) ? input.services : [],
+    orders: Array.isArray(input.orders) ? input.orders : [],
+    money: Array.isArray(input.money) ? input.money : [],
+    debts: Array.isArray(input.debts) ? input.debts : [],
+    losses: Array.isArray(input.losses) ? input.losses : [],
+    notifications: Array.isArray(input.notifications) ? input.notifications : [],
+    reviews: Array.isArray(input.reviews) ? input.reviews : [],
+    cashRegister: input.cashRegister ?? base.cashRegister,
+    settings: { ...base.settings, ...(input.settings ?? {}) }
+  };
+}
+
 function sanitizeState(state: BusinessState): BusinessState {
   if (!state.admin) return state;
   return {
@@ -36,13 +61,13 @@ export async function loadState(): Promise<BusinessState> {
     return await new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readonly');
       const request = tx.objectStore(STORE_NAME).get(STATE_KEY);
-      request.onsuccess = () => resolve(request.result ?? defaultState());
+      request.onsuccess = () => resolve(normalizeState(request.result ?? defaultState()));
       request.onerror = () => reject(request.error);
     });
   } catch {
     try {
       const raw = localStorage.getItem(STATE_KEY);
-      return raw ? JSON.parse(raw) as BusinessState : defaultState();
+      return raw ? normalizeState(JSON.parse(raw) as BusinessState) : defaultState();
     } catch {
       return defaultState();
     }
