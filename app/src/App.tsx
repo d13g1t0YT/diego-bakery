@@ -1,4 +1,6 @@
 import { Component, type Dispatch, type ErrorInfo, type ReactNode, type SetStateAction, useEffect, useMemo, useRef, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { Preferences } from '@capacitor/preferences';
 import { apiConfigured, getCloudState, getPublicOrders, login, pingHealth, putCloudState, submitPublicOrder, updatePublicOrderStatus, uploadBackup } from './api';
 import { calculateRecipeCost, type BusinessState, type Customer, type Debt, type Ingredient, type LocalAdmin, type MoneyMove, type MoneyMoveType, type Order, type OrderItem, type OrderStatus, type Product, type Recipe, defaultState, money, uid } from './types';
 import { CashRegisterView, CombosView, CustomersView, LoyaltyView, NotificationsView, PromotionsView, RecipesView, ServicesView, SuppliersView } from './BusinessFeatures';
@@ -113,6 +115,35 @@ async function hashPin(pin: string): Promise<string> {
   return Array.from(new Uint8Array(hash)).map(v => v.toString(16).padStart(2, '0')).join('');
 }
 
+async function readSessionToken(): Promise<string | undefined> {
+  try {
+    if (Capacitor.isNativePlatform()) {
+      return (await Preferences.get({ key: 'diego-bakery-token' })).value ?? undefined;
+    }
+  } catch {
+    // Fall through to web storage.
+  }
+  return localStorage.getItem('diego-bakery-token') ?? undefined;
+}
+
+async function writeSessionToken(token: string): Promise<void> {
+  try {
+    if (Capacitor.isNativePlatform()) await Preferences.set({ key: 'diego-bakery-token', value: token });
+    else localStorage.setItem('diego-bakery-token', token);
+  } catch {
+    localStorage.setItem('diego-bakery-token', token);
+  }
+}
+
+async function clearSessionToken(): Promise<void> {
+  try {
+    if (Capacitor.isNativePlatform()) await Preferences.remove({ key: 'diego-bakery-token' });
+  } catch {
+    // Local storage is still cleared below.
+  }
+  localStorage.removeItem('diego-bakery-token');
+}
+
 function ErrorFallback({ error }: { error: Error }) {
   return (
     <div className="fatal-screen">
@@ -177,9 +208,14 @@ function AppInner() {
   useEffect(() => {
     void (async () => {
       const loaded = await loadState();
-      stateRef.current = loaded;
-      setState(loaded);
-      setLoginPhone(loaded.admin?.phone ?? '');
+      const token = await readSessionToken();
+      const restored = token && loaded.admin
+        ? { ...loaded, admin: { ...loaded.admin, token } }
+        : loaded;
+      stateRef.current = restored;
+      setState(restored);
+      setLoginPhone(restored.admin?.phone ?? '');
+      if (token && restored.admin) setLogged(true);
       setReady(true);
     })();
   }, []);
@@ -517,6 +553,7 @@ function AppInner() {
           token: result.token
         };
         updateState(current => ({ ...current, admin }));
+        await writeSessionToken(result.token);
         setLogged(true);
         setMessage('Acceso correcto. Sincronizando…');
         window.setTimeout(() => { void refreshFromServer(); }, 0);
@@ -939,7 +976,7 @@ function AppInner() {
         </nav>
         <div className="sidebar-bottom">
           <button className="secondary wide" onClick={() => { setMode('cliente'); setMessage(''); }}>Vista de cliente</button>
-          <button className="link-button" onClick={() => { setLogged(false); updateState(current => ({ ...current, admin: current.admin ? { ...current.admin, token: undefined } : undefined })); }}>Cerrar sesión</button>
+          <button className="link-button" onClick={() => { setLogged(false); updateState(current => ({ ...current, admin: current.admin ? { ...current.admin, token: undefined } : undefined })); void clearSessionToken(); }}>Cerrar sesión</button>
         </div>
       </aside>
 
