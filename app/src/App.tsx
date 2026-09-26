@@ -7,7 +7,7 @@ import { BusinessState, Debt, Ingredient, LocalAdmin, MoneyMove, MoneyMoveType, 
 import { csvDownload, downloadBackup, loadState, restoreBackup, saveState } from './storage';
 
 type Mode = 'admin' | 'cliente';
-type Section = 'inicio' | 'pedidos' | 'productos' | 'ingredientes' | 'finanzas' | 'deudas' | 'perdidas' | 'reportes' | 'ajustes';
+type Section = 'inicio' | 'pedidos' | 'productos' | 'ingredientes' | 'recetas' | 'proveedores' | 'clientes' | 'finanzas' | 'caja' | 'deudas' | 'perdidas' | 'promociones' | 'lealtad' | 'notificaciones' | 'servicios' | 'reportes' | 'ajustes';
 
 const STATUS_LABELS: Record<OrderStatus, string> = {
   pendiente: 'Pendiente',
@@ -81,6 +81,7 @@ export function App() {
   const [setupPin, setSetupPin] = useState('');
   const [cart, setCart] = useState<OrderItem[]>([]);
   const [customer, setCustomer] = useState({ name: '', phone: '', address: '', notes: '' });
+  const [promoCode, setPromoCode] = useState('');
 
   useEffect(() => {
     void (async () => {
@@ -139,6 +140,7 @@ export function App() {
   const totalSales = useMemo(() => state?.money.filter(m => m.type === 'venta').reduce((s, m) => s + m.amount, 0) ?? 0, [state]);
   const totalExpenses = useMemo(() => state?.money.filter(m => m.type === 'gasto').reduce((s, m) => s + m.amount, 0) ?? 0, [state]);
   const pendingOrders = state?.orders.filter(o => !['entregada', 'cancelada', 'archivada'].includes(o.status)).length ?? 0;
+  const unreadNotifications = state?.notifications.filter(n => !n.read).length ?? 0;
 
   async function refreshFromServer() {
     if (!state?.admin?.token || !online) return;
@@ -398,10 +400,98 @@ export function App() {
   }
 
   function updateOrder(id: string, patch: Partial<Order>) {
-    setState(prev => prev ? {
-      ...prev,
-      orders: prev.orders.map(o => o.id === id ? { ...o, ...patch } : o)
-    } : prev);
+    const current = state.orders.find(o => o.id === id);
+    if (!current) return;
+
+    if (patch.status === 'preparando' && !current.inventoryDeducted) {
+      const shortages: string[] = [];
+      for (const item of current.items) {
+        const recipe = state.recipes.find(r => r.productId === item.productId);
+        if (!recipe) continue;
+        for (const line of recipe.ingredients) {
+          const ingredient = state.ingredients.find(i => i.id === line.ingredientId);
+          const required = (line.quantity / Math.max(1, recipe.yieldUnits)) * item.quantity;
+          if (ingredient && ingredient.stock + 1e-9 < required) {
+            shortages.push(ingredient.name + ' (faltan ' + (required - ingredient.stock).toFixed(2) + ' ' + ingredient.unit + ')');
+          }
+        }
+      }
+      if (shortages.length) {
+        setMessage('No se puede preparar todavía: ' + shortages.join(', '));
+        return;
+      }
+    }
+
+    setState(prev => {
+      if (!prev) return prev;
+      const nextOrder = { ...current, ...patch };
+      const paidDelta = Number(nextOrder.paid || 0) - Number(current.paid || 0);
+      let nextMoney = prev.money;
+      if (paidDelta !== 0) {
+        nextMoney = [{
+          id: uid('mov'),
+          date: new Date().toISOString(),
+          type: paidDelta > 0 ? 'venta' : 'ajuste',
+          amount: Math.abs(paidDelta),
+          description: 'Pago del pedido ' + current.id.slice(-6),
+          category: nextOrder.paymentMethod || 'venta',
+          method: nextOrder.paymentMethod || 'efectivo'
+        }, ...prev.money];
+      }
+
+      let ingredients = prev.ingredients;
+      let inventoryDeducted = current.inventoryDeducted;
+      if (patch.status === 'preparando' && !current.inventoryDeducted) {
+        ingredients = prev.ingredients.map(ingredient => {
+          let stock = ingredient.stock;
+          for (const item of current.items) {
+            const recipe = prev.recipes.find(r => r.productId === item.productId);
+            if (!recipe) continue;
+            for (const line of recipe.ingredients) {
+              if (line.ingredientId === ingredient.id) {
+                stock -= (line.quantity / Math.max(1, recipe.yieldUnits)) * item.quantity;
+              }
+            }
+          }
+          return { ...ingredient, stock: Math.max(0, Number(stock.toFixed(4))) };
+        });
+        inventoryDeducted = true;
+      }
+
+      let customers = prev.customers;
+      if (patch.status === 'entregada' && current.status !== 'entregada' && current.customerPhone) {
+        const points = Math.max(0, Math.floor(nextOrder.total * prev.settings.loyaltyPointsPerSol));
+        customers = prev.customers.map(customer =>
+          customer.phone === current.customerPhone
+            ? {
+                ...customer,
+                points: customer.points + points,
+                level: customer.points + points >= 500 ? 'Oro' : customer.points + points >= 200 ? 'Plata' : 'Inicial'
+              }
+            : customer
+        );
+      }
+
+      const notifications = nextOrder.status !== current.status
+        ? [{
+            id: uid('not'),
+            type: 'pedido' as const,
+            title: 'Pedido actualizado',
+            message: current.customerName + ': ' + STATUS_LABELS[nextOrder.status],
+            read: false,
+            createdAt: new Date().toISOString()
+          }, ...prev.notifications]
+        : prev.notifications;
+
+      return {
+        ...prev,
+        orders: prev.orders.map(o => o.id === id ? { ...nextOrder, inventoryDeducted } : o),
+        money: nextMoney,
+        ingredients,
+        customers,
+        notifications
+      };
+    });
   }
 
   if (loading || !state) {
@@ -413,7 +503,7 @@ export function App() {
     : state.settings.theme;
 
   if (mode === 'cliente') {
-    return <CustomerView products={activeProducts} cart={cart} addToCart={addToCart} customer={customer} setCustomer={setCustomer} submit={submitCustomerOrder} onAdmin={() => setMode('admin')} theme={theme} message={message} />;
+    return <CustomerView products={activeProducts} cart={cart} addToCart={addToCart} customer={customer} setCustomer={setCustomer} promoCode={promoCode} setPromoCode={setPromoCode} promotions={state.promotions} combos={state.combos} submit={submitCustomerOrder} onAdmin={() => setMode('admin')} theme={theme} message={message} settings={state.settings} />;
   }
 
   if (!logged) {
@@ -450,7 +540,9 @@ export function App() {
         <nav>
           {([
             ['inicio', 'Inicio'], ['pedidos', 'Pedidos'], ['productos', 'Productos'], ['ingredientes', 'Ingredientes'],
-            ['finanzas', 'Finanzas'], ['deudas', 'Deudas'], ['perdidas', 'Pérdidas'], ['reportes', 'Reportes'], ['ajustes', 'Ajustes']
+            ['recetas', 'Recetas'], ['proveedores', 'Proveedores'], ['clientes', 'Clientes'], ['finanzas', 'Finanzas'],
+            ['caja', 'Caja'], ['deudas', 'Deudas'], ['perdidas', 'Pérdidas'], ['promociones', 'Promociones'], ['lealtad', 'Lealtad'],
+            ['notificaciones', 'Avisos'], ['servicios', 'Servicios'], ['reportes', 'Reportes'], ['ajustes', 'Ajustes']
           ] as [Section,string][]).map(([id,label]) => <button key={id} className={section === id ? 'nav-item active' : 'nav-item'} onClick={() => setSection(id)}><span>{label}</span>{id === 'pedidos' && pendingOrders > 0 && <b>{pendingOrders}</b>}</button>)}
         </nav>
         <div className="sidebar-bottom">
@@ -470,7 +562,15 @@ export function App() {
         {section === 'pedidos' && <OrdersView state={state} onUpdate={updateOrder} />}
         {section === 'productos' && <ProductsView products={products} onCreate={createProduct} onUpdate={updateProduct} />}
         {section === 'ingredientes' && <IngredientsView ingredients={state.ingredients} onAdd={addIngredient} onStock={changeStock} />}
+        {section === 'recetas' && <RecipesView state={state} setState={setState} />}
+        {section === 'proveedores' && <SuppliersView suppliers={state.suppliers} setSuppliers={items => setState(prev => prev ? { ...prev, suppliers: items } : prev)} />}
+        {section === 'clientes' && <CustomersView customers={state.customers} setCustomers={items => setState(prev => prev ? { ...prev, customers: items } : prev)} />}
         {section === 'finanzas' && <FinanceView moves={state.money} addMoney={addMoney} balance={cashBalance} />}
+        {section === 'caja' && <CashRegisterView register={state.cashRegister} setRegister={register => setState(prev => prev ? { ...prev, cashRegister: register } : prev)} moneyMoves={state.money} />}
+        {section === 'promociones' && <PromotionsView promotions={state.promotions} products={state.products} setPromotions={items => setState(prev => prev ? { ...prev, promotions: items } : prev)} />}
+        {section === 'lealtad' && <LoyaltyView rewards={state.loyaltyRewards} setRewards={items => setState(prev => prev ? { ...prev, loyaltyRewards: items } : prev)} customers={state.customers} />}
+        {section === 'notificaciones' && <NotificationsView items={state.notifications} setItems={items => setState(prev => prev ? { ...prev, notifications: items } : prev)} />}
+        {section === 'servicios' && <ServicesView services={state.services} setServices={items => setState(prev => prev ? { ...prev, services: items } : prev)} />}
         {section === 'deudas' && <DebtsView debts={state.debts} setDebts={debts => setState(prev => prev ? { ...prev, debts } : prev)} />}
         {section === 'perdidas' && <LossesView state={state} setState={setState} />}
         {section === 'reportes' && <ReportsView state={state} />}
@@ -489,6 +589,14 @@ function sectionTitle(section: Section): string {
     finanzas: 'Finanzas y caja',
     deudas: 'Cuentas por cobrar y pagar',
     perdidas: 'Pérdidas y desperdicios',
+    recetas: 'Recetas y costos reales',
+    proveedores: 'Proveedores',
+    clientes: 'Clientes',
+    caja: 'Caja',
+    promociones: 'Promociones y descuentos',
+    lealtad: 'Programa de lealtad',
+    notificaciones: 'Avisos y notificaciones',
+    servicios: 'Servicios y utilidades',
     reportes: 'Reportes',
     ajustes: 'Configuración'
   }[section];
