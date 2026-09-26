@@ -20,15 +20,15 @@ jobs:
     steps:
       - name: Check health endpoint
         run: |
-          curl --fail --silent --show-error --location --retry 12 --retry-delay 5 --retry-all-errors \
-            https://diego-bakery-api-clean-production.up.railway.app/health
-
+          code="$(curl --silent --show-error --location --retry 12 --retry-delay 5 --retry-all-errors \
+            -o /tmp/health.json -w '%{http_code}' \
+            https://diego-bakery-api-clean-production.up.railway.app/health)"
       - name: Check app entry is a real 200 response
         run: |
-          headers="$(curl --fail --silent --show-error --location --retry 12 --retry-delay 5 --retry-all-errors -D - -o /tmp/app.html \
+          code="$(curl --silent --show-error --location --retry 12 --retry-delay 5 --retry-all-errors \
+            -o /tmp/app.html -w '%{http_code}' \
             https://diego-bakery-api-clean-production.up.railway.app/app/)"
-          printf '%s\n' "${headers}"
-          grep -Eq '^HTTP/[0-9.]+ 200' /tmp/app.html 2>/dev/null || true
+          test "$code" = "200"
           grep -qi '<title>Diego Bakery</title>' /tmp/app.html
           grep -Eqi '<script[^>]+type="module"' /tmp/app.html
 
