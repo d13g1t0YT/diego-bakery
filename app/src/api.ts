@@ -70,6 +70,37 @@ export async function uploadBackup(token: string, state: BusinessState): Promise
   }, token);
 }
 
+export async function submitPublicOrder(order: {
+  id: string;
+  customerName: string;
+  customerPhone: string;
+  address?: string;
+  notes?: string;
+  items: Order['items'];
+  subtotal: number;
+  discount: number;
+  total: number;
+}): Promise<void> {
+  await request('/api/pedidos-publicos', {
+    method: 'POST',
+    body: JSON.stringify({
+      cliente_ref: order.id,
+      cliente_nombre: order.customerName,
+      telefono: order.customerPhone,
+      direccion: order.address || null,
+      notas: order.notes || null,
+      items: order.items,
+      subtotal: order.subtotal,
+      descuento: order.discount,
+      total: order.total
+    })
+  });
+}
+
+export async function getPublicOrders(token: string): Promise<any[]> {
+  return request('/api/pedidos-publicos', {}, token);
+}
+
 export function apiConfigured(): boolean {
   return Boolean(API_BASE);
 }
