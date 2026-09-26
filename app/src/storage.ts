@@ -4,12 +4,26 @@ const DB_NAME = 'diego-bakery-db';
 const STORE_NAME = 'state';
 const STATE_KEY = 'business';
 
+function sanitizeState(state: BusinessState): BusinessState {
+  if (!state.admin) return state;
+  return {
+    ...state,
+    admin: {
+      name: state.admin.name,
+      phone: state.admin.phone,
+      pinHash: state.admin.pinHash
+    }
+  };
+}
+
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, 1);
     request.onupgradeneeded = () => {
       const db = request.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME);
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME);
+      }
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error ?? new Error('No se pudo abrir almacenamiento'));
@@ -26,27 +40,34 @@ export async function loadState(): Promise<BusinessState> {
       request.onerror = () => reject(request.error);
     });
   } catch {
-    const raw = localStorage.getItem(STATE_KEY);
-    return raw ? JSON.parse(raw) as BusinessState : defaultState();
+    try {
+      const raw = localStorage.getItem(STATE_KEY);
+      return raw ? JSON.parse(raw) as BusinessState : defaultState();
+    } catch {
+      return defaultState();
+    }
   }
 }
 
 export async function saveState(state: BusinessState): Promise<void> {
+  const safe = sanitizeState(state);
+
   try {
     const db = await openDb();
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
-      tx.objectStore(STORE_NAME).put(state, STATE_KEY);
+      tx.objectStore(STORE_NAME).put(safe, STATE_KEY);
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
   } catch {
-    localStorage.setItem(STATE_KEY, JSON.stringify(state));
+    localStorage.setItem(STATE_KEY, JSON.stringify(safe));
   }
 }
 
 export function downloadBackup(state: BusinessState): void {
-  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+  const safe = sanitizeState(state);
+  const blob = new Blob([JSON.stringify(safe, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -58,18 +79,29 @@ export function downloadBackup(state: BusinessState): void {
 export async function restoreBackup(file: File): Promise<BusinessState> {
   const text = await file.text();
   const parsed = JSON.parse(text) as BusinessState;
+
   if (!parsed || !Array.isArray(parsed.products) || !parsed.settings) {
     throw new Error('Archivo de respaldo inválido');
   }
-  await saveState(parsed);
-  return parsed;
+
+  const safe = sanitizeState(parsed);
+  await saveState(safe);
+  return safe;
 }
 
-export function csvDownload(filename: string, rows: Array<Record<string, string | number | boolean>>): void {
+export function csvDownload(
+  filename: string,
+  rows: Array<Record<string, string | number | boolean>>
+): void {
   if (!rows.length) return;
+
   const headers = Object.keys(rows[0]);
   const escape = (v: unknown) => `"${String(v ?? '').replaceAll('"', '""')}"`;
-  const csv = [headers.join(','), ...rows.map(row => headers.map(h => escape(row[h])).join(','))].join('\n');
+  const csv = [
+    headers.join(','),
+    ...rows.map(row => headers.map(h => escape(row[h])).join(','))
+  ].join('\n');
+
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
