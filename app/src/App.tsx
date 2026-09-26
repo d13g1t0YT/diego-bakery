@@ -420,6 +420,7 @@ export function App() {
   }
 
   function addCombo(combo: BusinessState['combos'][number]) {
+    if (!state) return;
     const chosenProducts = combo.productIds
       .map(id => state.products.find(p => p.id === id))
       .filter((p): p is Product => Boolean(p));
@@ -461,6 +462,7 @@ export function App() {
   }
 
   function submitCustomerOrder() {
+    if (!state) return;
     if (!customer.name.trim() || !/^\\d{6,20}$/.test(customer.phone.trim()) || cart.length === 0) {
       setMessage('Completa un nombre, un teléfono válido y agrega al menos un producto.');
       return;
@@ -516,6 +518,7 @@ export function App() {
   }
 
   function updateOrder(id: string, patch: Partial<Order>) {
+    if (!state) return;
     const current = state.orders.find(o => o.id === id);
     if (!current) return;
 
