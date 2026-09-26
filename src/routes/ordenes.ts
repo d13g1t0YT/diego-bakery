@@ -1,12 +1,23 @@
 import { Router, Response } from 'express';
 import { pool } from '../db/connection.js';
 import { autenticar, AuthRequest } from '../middleware/auth.js';
-import { v4 as uuidv4 } from 'uuid';
 
 const router = Router();
 
-// GET /api/ordenes - Listar órdenes
-router.get('/', autenticar, async (req: AuthRequest, res: Response) => {
+const estadosValidos = [
+  'pendiente',
+  'esperando_confirmacion',
+  'comprando_ingredientes',
+  'preparando',
+  'lista',
+  'por_entregar',
+  'entregada',
+  'no_entregada',
+  'cancelada',
+  'archivada'
+] as const;
+
+router.get('/', autenticar, async (_req: AuthRequest, res: Response) => {
   try {
     const result = await pool.query(`
       SELECT o.*, c.nombre as cliente_nombre, c.apellido as cliente_apellido
@@ -21,15 +32,19 @@ router.get('/', autenticar, async (req: AuthRequest, res: Response) => {
   }
 });
 
-// POST /api/ordenes - Crear orden
 router.post('/', autenticar, async (req: AuthRequest, res: Response) => {
   try {
-    const { cliente_id, notas } = req.body;
-    const id = uuidv4();
+    const clienteId = req.body?.cliente_id || null;
+    const notas = typeof req.body?.notas === 'string' ? req.body.notas.trim() : null;
+
+    if (clienteId !== null && typeof clienteId !== 'string') {
+      res.status(400).json({ error: 'cliente_id inválido' });
+      return;
+    }
 
     const result = await pool.query(
-      'INSERT INTO ordenes (id, cliente_id, estado, notas) VALUES ($1, $2, $3, $4) RETURNING *',
-      [id, cliente_id || null, 'pendiente', notas || null]
+      'INSERT INTO ordenes (cliente_id, estado, notas) VALUES ($1, $2, $3) RETURNING *',
+      [clienteId, 'pendiente', notas || null]
     );
 
     res.status(201).json(result.rows[0]);
@@ -39,16 +54,14 @@ router.post('/', autenticar, async (req: AuthRequest, res: Response) => {
   }
 });
 
-// PUT /api/ordenes/:id - Actualizar estado de orden
 router.put('/:id', autenticar, async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { estado } = req.body;
+    const estado = typeof req.body?.estado === 'string' ? req.body.estado : '';
 
-    const estadosValidos = ['pendiente', 'esperando_confirmacion', 'comprando_ingredientes', 'preparando', 'lista', 'por_entregar', 'entregada', 'no_entregada', 'cancelada'];
-
-    if (!estadosValidos.includes(estado)) {
-      return res.status(400).json({ error: 'Estado inválido' });
+    if (!estadosValidos.includes(estado as typeof estadosValidos[number])) {
+      res.status(400).json({ error: 'Estado inválido' });
+      return;
     }
 
     const result = await pool.query(
@@ -57,7 +70,8 @@ router.put('/:id', autenticar, async (req: AuthRequest, res: Response) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Orden no encontrada' });
+      res.status(404).json({ error: 'Orden no encontrada' });
+      return;
     }
 
     res.json(result.rows[0]);
@@ -68,4 +82,3 @@ router.put('/:id', autenticar, async (req: AuthRequest, res: Response) => {
 });
 
 export default router;
-
