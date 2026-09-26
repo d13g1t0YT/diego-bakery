@@ -213,3 +213,21 @@ CREATE TABLE IF NOT EXISTS estados_negocio (
   contenido JSONB NOT NULL,
   actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS pedidos_publicos (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  cliente_ref VARCHAR(120) UNIQUE,
+  cliente_nombre VARCHAR(255) NOT NULL,
+  telefono VARCHAR(20) NOT NULL,
+  direccion TEXT,
+  notas TEXT,
+  items JSONB NOT NULL,
+  subtotal DECIMAL(10,2) NOT NULL CHECK (subtotal >= 0),
+  descuento DECIMAL(10,2) NOT NULL DEFAULT 0 CHECK (descuento >= 0),
+  total DECIMAL(10,2) NOT NULL CHECK (total >= 0),
+  estado VARCHAR(50) NOT NULL DEFAULT 'pendiente',
+  creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_pedidos_publicos_estado
+  ON pedidos_publicos(estado);
