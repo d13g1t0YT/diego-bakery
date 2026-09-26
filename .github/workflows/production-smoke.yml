@@ -37,12 +37,18 @@ jobs:
 
       - name: Check protected API routes reject anonymous access
         run: |
-          for path in /api/estado /api/pedidos-publicos /api/ia/asesor; do
+          for path in /api/estado /api/pedidos-publicos; do
             code="$(curl --silent --show-error --location --retry 8 --retry-delay 3 --retry-all-errors \
               -o /dev/null -w '%{http_code}' \
               "https://diego-bakery-api-clean-production.up.railway.app$path")"
             test "$code" = "401"
           done
+          code="$(curl --silent --show-error --location --retry 8 --retry-delay 3 --retry-all-errors \
+            -H 'Content-Type: application/json' \
+            -o /dev/null -w '%{http_code}' \
+            -X POST -d '{}' \
+            https://diego-bakery-api-clean-production.up.railway.app/api/ia/asesor)"
+          test "$code" = "401"
 
       - name: Check public order validation
         run: |
