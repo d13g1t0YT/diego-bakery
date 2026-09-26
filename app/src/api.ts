@@ -80,8 +80,8 @@ export async function submitPublicOrder(order: {
   subtotal: number;
   discount: number;
   total: number;
-}): Promise<void> {
-  await request('/api/pedidos-publicos', {
+}): Promise<{ id: string }> {
+  return request<{ id: string }>('/api/pedidos-publicos', {
     method: 'POST',
     body: JSON.stringify({
       cliente_ref: order.id,
@@ -95,6 +95,13 @@ export async function submitPublicOrder(order: {
       total: order.total
     })
   });
+}
+
+export async function updatePublicOrderStatus(token: string, id: string, estado: string): Promise<void> {
+  await request(`/api/pedidos-publicos/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify({ estado })
+  }, token);
 }
 
 export async function getPublicOrders(token: string): Promise<any[]> {
