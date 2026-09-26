@@ -13,6 +13,7 @@ import authRoutes from './routes/auth.js';
 import productosRoutes from './routes/productos.js';
 import ordenesRoutes from './routes/ordenes.js';
 import backupRoutes from './routes/backup.js';
+import estadoRoutes from './routes/estado.js';
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -36,6 +37,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/productos', productosRoutes);
 app.use('/api/ordenes', ordenesRoutes);
 app.use('/api/backup', backupRoutes);
+app.use('/api/estado', estadoRoutes);
 
 app.use((_req: Request, res: Response) => {
   res.status(404).json({ error: 'Ruta no encontrada' });
