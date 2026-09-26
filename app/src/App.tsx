@@ -778,7 +778,7 @@ function Dashboard({ cash, sales, expenses, pendingOrders, state }: { cash: numb
     </div>
     <div className="grid-2">
       <section className="panel"><div className="panel-head"><div><p className="eyebrow">PEDIDOS</p><h3>Actividad reciente</h3></div></div>
-        {recent.length === 0 ? <Empty text="Todavía no hay pedidos." /> : <div className="table-wrap"><table><thead><tr><th>Cliente</th><th>Total</th><th>Estado</th></tr></thead><tbody>{recent.map(o => <tr key={o.id}><td>{o.customerName}</td><td>{money(o.total)}</td><td><span className="pill">{STATUS_LABELS[o.status]}</span></td></tr>)}</tbody></table></div>}
+        {recent.length === 0 ? <Empty text="Todavía no hay pedidos." /> : <div className="table-wrap"><table><thead><tr><th>Cliente</th><th>Total</th><th>Estado</th></tr></thead><tbody>{recent.map(o => <tr key={o.id}><td>{o.customerName}</td><td>{money(o.total)}</td><td><span className={`pill order-status status-${o.status}`}>{STATUS_LABELS[o.status]}</span></td></tr>)}</tbody></table></div>}
       </section>
       <section className="panel"><div className="panel-head"><div><p className="eyebrow">INVENTARIO</p><h3>Atención necesaria</h3></div></div>
         {lowStock.length === 0 ? <Empty text="No hay ingredientes con stock bajo." /> : lowStock.map(i => <div className="list-row" key={i.id}><div><strong>{i.name}</strong><span>{i.supplier || 'Sin proveedor'}</span></div><b>{i.stock} {i.unit}</b></div>)}
