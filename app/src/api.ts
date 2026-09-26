@@ -131,6 +131,22 @@ export async function getPublicOrders(token: string): Promise<any[]> {
   return request('/api/pedidos-publicos', {}, token);
 }
 
+export async function askBusinessAi(
+  token: string,
+  question: string,
+  state: BusinessState,
+  history: Array<{ role: 'user' | 'assistant'; content: string }> = []
+): Promise<{ answer: string }> {
+  return request<{ answer: string }>('/api/ia/asesor', {
+    method: 'POST',
+    body: JSON.stringify({
+      question,
+      state,
+      history: history.slice(-10)
+    })
+  }, token);
+}
+
 export function apiConfigured(): boolean {
   return Boolean(API_BASE);
 }
