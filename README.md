@@ -1,69 +1,94 @@
-# Diego Bakery API
+# Diego Bakery
 
-Sistema de gestión empresarial offline-first para panaderías. API REST con soporte para:
+Sistema de gestión para un negocio de repostería artesanal, con una aplicación React + Vite + Capacitor y una API REST Node.js + Express.
 
-- **Administración**: Autenticación con PIN/teléfono, biométrica lista
-- **Productos & Recetas**: Gestión con cálculo automático de costos y márgenes
-- **Pedidos**: Workflow completo de estados
-- **Inventario**: Movimientos y control de stock
-- **Finanzas**: Gastos, ingresos, deudas, inversiones
-- **Clientes & Lealtad**: Gestión con puntos de lealtad
-- **Sincronización**: Preparado para offline-first con sync API
+## Arquitectura actual
 
-## Instalación local
+- **App**: React 19 + Vite + Capacitor 8.
+- **Persistencia local**: IndexedDB con respaldo alternativo en localStorage.
+- **API**: Node.js 20 + TypeScript + Express.
+- **Base de datos**: PostgreSQL.
+- **Autenticación**: teléfono + PIN con JWT; biometría preparada en la app nativa.
+- **Modo offline-first**: la operación local puede continuar sin conexión y sincronizar cuando vuelve Internet.
+- **Pedidos públicos**: los clientes pueden enviar pedidos sin iniciar sesión.
+- **Negocio**: productos, recetas/costos, ingredientes, proveedores, clientes, pedidos, caja, finanzas, deudas, pérdidas, promociones, combos, lealtad, avisos y reportes.
+- **Notificaciones**: avisos locales en dispositivos compatibles.
+
+## API
+
+### Autenticación
+- `POST /api/auth/login`
+- `GET /api/auth/verify`
+
+### Productos
+- `GET /api/productos`
+- `POST /api/productos`
+- `PUT /api/productos/:id`
+- `DELETE /api/productos/:id`
+
+### Pedidos
+- `GET /api/ordenes`
+- `POST /api/ordenes`
+- `PUT /api/ordenes/:id`
+
+### Sincronización y respaldos
+- `GET /api/estado`
+- `PUT /api/estado`
+- `POST /api/backup`
+
+### Pedidos públicos
+- `POST /api/pedidos-publicos`
+- `GET /api/pedidos-publicos`
+- `PUT /api/pedidos-publicos/:id`
+
+## Instalación del backend
 
 ```bash
+npm install
+npm run db:migrate
+npm run dev
+```
+
+Crear `.env` desde `.env.example`.
+
+### Variables
+
+```text
+DATABASE_URL=postgresql://user:password@localhost:5432/diego_bakery
+PORT=3000
+NODE_ENV=development
+JWT_SECRET=your-secret-key
+ADMIN_PHONE=999999999
+ADMIN_PIN=0000
+ADMIN_NAME=Administrador
+ADMIN_LASTNAME=Diego Bakery
+```
+
+`ADMIN_PHONE` + `ADMIN_PIN` son opcionales: cuando están definidos, el backend puede crear automáticamente el administrador inicial si ese teléfono todavía no existe. En producción se deben usar valores privados y fuertes; no se deben subir secretos reales al repositorio.
+
+## Instalación de la app
+
+```bash
+cd app
 npm install
 npm run dev
 ```
 
-## Configuración
-
-Crear `.env` basado en `.env.example`:
-
-```
-DATABASE_URL=postgresql://user:password@localhost:5432/diego_bakery
-PORT=3000
-JWT_SECRET=your-secret-key
-ADMIN_PIN=0000
-```
-
-## Base de datos
+Para Android:
 
 ```bash
-npm run db:migrate
+npm run build
+npx cap sync android
 ```
 
-## Estructura
+La URL de la API de producción se configura mediante `app/.env.production` con `VITE_API_URL`.
 
-- `/src/db` - Conexión y esquema
-- `/src/middleware` - Autenticación JWT
-- `/src/routes` - Endpoints de API
-- `/src/index.ts` - Servidor Express
+## Calidad y despliegue
 
-## API Endpoints
+El proyecto incluye un workflow de GitHub Actions que comprueba por separado el build del backend y el build de la app antes de considerar válido un cambio.
 
-### Autenticación
-- `POST /api/auth/login` - Login con PIN
-- `GET /api/auth/verify` - Verificar token
+Railway aloja actualmente la API y PostgreSQL. El servicio principal de API está configurado con `/health` como healthcheck.
 
-### Productos
-- `GET /api/productos` - Listar
-- `POST /api/productos` - Crear
-- `PUT /api/productos/:id` - Actualizar
-- `DELETE /api/productos/:id` - Eliminar
+## Próxima etapa del producto
 
-### Órdenes
-- `GET /api/ordenes` - Listar
-- `POST /api/ordenes` - Crear
-- `PUT /api/ordenes/:id` - Actualizar estado
-
-## Estado del proyecto
-
-MVP listo para:
-- [ ] Configurar cliente Android (Kotlin/Compose)
-- [ ] Implementar sync API completa (pendientes, confirmados, etc.)
-- [ ] Agregar endpoints de recetas, ingredientes, finanzas
-- [ ] Integración Yape/Plin
-- [ ] Generación de reportes (PDF/CSV)
-
+La base funcional ya está conectada. La siguiente etapa se centra en endurecer la sincronización offline-first, completar la persistencia de módulos empresariales en PostgreSQL, mejorar la experiencia de cliente y administración, y preparar el paquete Android de producción.
