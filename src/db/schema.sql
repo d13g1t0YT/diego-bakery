@@ -1,6 +1,8 @@
 -- Diego Bakery Database Schema
 -- Spanish-ready business management system
 
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 -- Usuarios/Administradores
 CREATE TABLE IF NOT EXISTS usuarios (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -31,7 +33,7 @@ CREATE TABLE IF NOT EXISTS productos (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   nombre VARCHAR(255) NOT NULL UNIQUE,
   descripcion TEXT,
-  precio_venta DECIMAL(10,2) NOT NULL,
+  precio_venta DECIMAL(10,2) NOT NULL CHECK (precio_venta > 0),
   activo BOOLEAN DEFAULT true,
   creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -42,8 +44,8 @@ CREATE TABLE IF NOT EXISTS ingredientes (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   nombre VARCHAR(255) NOT NULL UNIQUE,
   unidad_medida VARCHAR(50) NOT NULL,
-  costo_unitario DECIMAL(10,4) NOT NULL,
-  cantidad_en_stock DECIMAL(10,2) DEFAULT 0,
+  costo_unitario DECIMAL(10,4) NOT NULL CHECK (costo_unitario >= 0),
+  cantidad_en_stock DECIMAL(10,2) DEFAULT 0 CHECK (cantidad_en_stock >= 0),
   creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -68,7 +70,7 @@ CREATE TABLE IF NOT EXISTS receta_ingredientes (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   receta_id UUID NOT NULL REFERENCES recetas(id),
   ingrediente_id UUID NOT NULL REFERENCES ingredientes(id),
-  cantidad DECIMAL(10,2) NOT NULL,
+  cantidad DECIMAL(10,2) NOT NULL CHECK (cantidad > 0),
   creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -89,7 +91,7 @@ CREATE TABLE IF NOT EXISTS orden_productos (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   orden_id UUID NOT NULL REFERENCES ordenes(id),
   producto_id UUID NOT NULL REFERENCES productos(id),
-  cantidad INTEGER NOT NULL,
+  cantidad INTEGER NOT NULL CHECK (cantidad > 0),
   precio_unitario DECIMAL(10,2),
   subtotal DECIMAL(10,2),
   creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -100,7 +102,7 @@ CREATE TABLE IF NOT EXISTS movimientos_inventario (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   ingrediente_id UUID NOT NULL REFERENCES ingredientes(id),
   tipo VARCHAR(50) NOT NULL,
-  cantidad DECIMAL(10,2) NOT NULL,
+  cantidad DECIMAL(10,2) NOT NULL CHECK (cantidad > 0),
   razon TEXT,
   creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -110,7 +112,7 @@ CREATE TABLE IF NOT EXISTS pagos (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   orden_id UUID NOT NULL REFERENCES ordenes(id),
   metodo VARCHAR(50) NOT NULL,
-  monto DECIMAL(10,2) NOT NULL,
+  monto DECIMAL(10,2) NOT NULL CHECK (monto > 0),
   referencia_transaccion VARCHAR(255),
   comprobante_url VARCHAR(500),
   confirmado_por UUID REFERENCES usuarios(id),
@@ -136,7 +138,7 @@ CREATE TABLE IF NOT EXISTS gastos (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   categoria VARCHAR(100),
   descripcion TEXT NOT NULL,
-  monto DECIMAL(10,2) NOT NULL,
+  monto DECIMAL(10,2) NOT NULL CHECK (monto > 0),
   fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -145,7 +147,7 @@ CREATE TABLE IF NOT EXISTS gastos (
 CREATE TABLE IF NOT EXISTS inversiones (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   descripcion TEXT NOT NULL,
-  monto DECIMAL(10,2) NOT NULL,
+  monto DECIMAL(10,2) NOT NULL CHECK (monto > 0),
   fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -155,7 +157,7 @@ CREATE TABLE IF NOT EXISTS deudas (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   cliente_id UUID REFERENCES clientes(id),
   tipo VARCHAR(50) NOT NULL,
-  monto DECIMAL(10,2) NOT NULL,
+  monto DECIMAL(10,2) NOT NULL CHECK (monto > 0),
   descripcion TEXT,
   pagado BOOLEAN DEFAULT false,
   fecha_vencimiento TIMESTAMP,
@@ -188,11 +190,9 @@ CREATE TABLE IF NOT EXISTS sincronizacion (
   sincronizado_en TIMESTAMP
 );
 
--- Índices para rendimiento
 CREATE INDEX IF NOT EXISTS idx_ordenes_cliente ON ordenes(cliente_id);
 CREATE INDEX IF NOT EXISTS idx_ordenes_estado ON ordenes(estado);
 CREATE INDEX IF NOT EXISTS idx_productos_activo ON productos(activo);
 CREATE INDEX IF NOT EXISTS idx_ingredientes_stock ON ingredientes(cantidad_en_stock);
 CREATE INDEX IF NOT EXISTS idx_movimientos_ingrediente ON movimientos_inventario(ingrediente_id);
 CREATE INDEX IF NOT EXISTS idx_pagos_orden ON pagos(orden_id);
-
