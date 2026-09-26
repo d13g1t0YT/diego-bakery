@@ -159,6 +159,7 @@ function AppInner() {
   const [mode, setMode] = useState<Mode>('admin');
   const [section, setSection] = useState<Section>('inicio');
   const [ready, setReady] = useState(false);
+  const [logged, setLogged] = useState(false);
   const [online, setOnline] = useState(typeof navigator === 'undefined' ? true : navigator.onLine);
   const [message, setMessage] = useState('');
   const [syncState, setSyncState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
@@ -557,7 +558,6 @@ function AppInner() {
     })();
   }
 
-  const [logged, setLogged] = useState(false);
 
   function addMoney(move: Omit<MoneyMove, 'id' | 'date'>) {
     updateState(current => ({
@@ -830,6 +830,28 @@ function AppInner() {
     });
   }
 
+  function addComboToCart(combo: BusinessState['combos'][number]) {
+    const cost = combo.productIds.reduce((sum, id) => sum + number(stateRef.current?.products.find(p => p.id === id)?.cost), 0);
+    const productId = 'combo_' + combo.id;
+    setCart(current => {
+      const found = current.find(item => item.productId === productId);
+      if (found) {
+        const quantity = found.quantity + 1;
+        return current.map(item => item.productId === productId
+          ? { ...item, quantity, subtotal: Number((quantity * item.unitPrice).toFixed(2)) }
+          : item);
+      }
+      return current.concat([{
+        productId,
+        productName: combo.name,
+        quantity: 1,
+        unitPrice: number(combo.price),
+        cost,
+        subtotal: number(combo.price)
+      }]);
+    });
+  }
+
   if (!ready || !state) {
     return <div className="splash"><div className="brand-mark">DB</div><h1>Diego Bakery</h1><p>Preparando tu negocio…</p></div>;
   }
@@ -853,25 +875,7 @@ function AppInner() {
       theme={theme}
       message={message}
       settings={state.settings}
-      addCombo={(combo) => {
-        const cost = combo.productIds.reduce((sum, id) => sum + number(state.products.find(p => p.id === id)?.cost), 0);
-        addToCart({
-          id: 'x' as never,
-          name: combo.name,
-          description: combo.name,
-          category: 'Combo',
-          categories: ['Combo'],
-          price: combo.price,
-          cost,
-          stock: 999,
-          active: true,
-          seasonal: false,
-          tags: [],
-          flavors: [],
-          sizes: [],
-          presentation: ''
-        });
-      }}
+      addCombo={addComboToCart}
     />;
   }
 
