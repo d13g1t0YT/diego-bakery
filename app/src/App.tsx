@@ -1,4 +1,4 @@
-import { Component, type ErrorInfo, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { Component, type Dispatch, type ErrorInfo, type ReactNode, type SetStateAction, useEffect, useMemo, useRef, useState } from 'react';
 import { apiConfigured, getCloudState, getPublicOrders, login, pingHealth, putCloudState, submitPublicOrder, updatePublicOrderStatus, uploadBackup } from './api';
 import { calculateRecipeCost, type BusinessState, type Customer, type Debt, type Ingredient, type LocalAdmin, type MoneyMove, type MoneyMoveType, type Order, type OrderItem, type OrderStatus, type Product, type Recipe, defaultState, money, uid } from './types';
 import { CashRegisterView, CombosView, CustomersView, LoyaltyView, NotificationsView, PromotionsView, RecipesView, ServicesView, SuppliersView } from './BusinessFeatures';
@@ -728,7 +728,7 @@ function AppInner() {
       };
     });
 
-    if (patch.status && before.source === 'cliente' && before.remoteId && before.remoteId) {
+    if (patch.status && before.source === 'cliente' && before.remoteId) {
       const token = stateRef.current?.admin?.token;
       if (token && online && apiConfigured()) {
         void updatePublicOrderStatus(token, before.remoteId, patch.status).catch(() => setMessage('Guardado localmente. El cambio en nube se reintentará.'));
@@ -1008,12 +1008,7 @@ function AuthScreen(props: {
   );
 }
 
-function Dashboard({ state, derived, openSection }: { state: BusinessState; derived: ReturnType<typeof useDerivedPlaceholder>; openSection: (section: Section) => void }) {
-  return null as never;
-}
-type useDerivedPlaceholder = () => never;
-
-function DashboardActual({ state, derived, openSection }: { state: BusinessState; derived: any; openSection: (section: Section) => void }) {
+function Dashboard({ state, derived, openSection }: { state: BusinessState; derived: any; openSection: (section: Section) => void }) {
   const todayOrders = state.orders.filter(o => o.createdAt.slice(0, 10) === dateKey()).slice(0, 6);
   return (
     <div className="content">
@@ -1252,7 +1247,7 @@ function DebtsView({ debts, setDebts }: { debts: Debt[]; setDebts: (items: Debt[
   </div>;
 }
 
-function LossesView({ state, setState }: { state: BusinessState; setState: React.Dispatch<React.SetStateAction<BusinessState | null>> }) {
+function LossesView({ state, setState }: { state: BusinessState; setState: Dispatch<SetStateAction<BusinessState | null>> }) {
   const [item, setItem] = useState('');
   const [quantity, setQuantity] = useState('');
   const [value, setValue] = useState('');
