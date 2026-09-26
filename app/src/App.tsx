@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { Preferences } from '@capacitor/preferences';
 import { BiometricAuth } from '@aparajita/capacitor-biometric-auth';
-import { apiConfigured, getOrders, getProducts, login, uploadBackup } from './api';
+import { apiConfigured, getCloudState, getOrders, getProducts, login, putCloudState, uploadBackup } from './api';
 import { BusinessState, Debt, Ingredient, LocalAdmin, MoneyMove, MoneyMoveType, Order, OrderItem, OrderStatus, Product, defaultState, money, uid } from './types';
 import { csvDownload, downloadBackup, loadState, restoreBackup, saveState } from './storage';
 
@@ -85,9 +85,13 @@ export function App() {
   useEffect(() => {
     void (async () => {
       const loaded = await loadState();
-      setState(loaded);
       const token = await readNativeToken();
-      if (token && loaded.admin) {
+      const restored = token && loaded.admin
+        ? { ...loaded, admin: { ...loaded.admin, token } }
+        : loaded;
+
+      setState(restored);
+      if (token && restored.admin) {
         setLogged(true);
         setBiometryAvailable(true);
       }
@@ -114,8 +118,11 @@ export function App() {
   useEffect(() => {
     if (!state?.settings.autoBackup || !logged || !online || !state.admin?.token) return;
     const timer = window.setTimeout(() => {
-      uploadBackup(state.admin!.token!, state).catch(() => undefined);
-    }, 7000);
+      void Promise.all([
+        putCloudState(state.admin!.token!, state),
+        uploadBackup(state.admin!.token!, state)
+      ]).catch(() => undefined);
+    }, 1500);
     return () => window.clearTimeout(timer);
   }, [state, logged, online]);
 
@@ -136,16 +143,25 @@ export function App() {
   async function refreshFromServer() {
     if (!state?.admin?.token || !online) return;
     try {
-      const [remoteProducts, remoteOrders] = await Promise.all([
-        getProducts(state.admin.token),
-        getOrders(state.admin.token)
-      ]);
-      setState(prev => prev ? {
-        ...prev,
-        products: remoteProducts.length ? remoteProducts.map(mapRemoteProduct) : prev.products,
-        orders: remoteOrders.length ? remoteOrders.map(mapRemoteOrder) : prev.orders,
-        lastSyncAt: new Date().toISOString()
-      } : prev);
+      try {
+        const remote = await getCloudState(state.admin.token);
+        setState(prev => prev ? {
+          ...remote,
+          admin: prev.admin,
+          lastSyncAt: new Date().toISOString()
+        } : prev);
+      } catch {
+        const [remoteProducts, remoteOrders] = await Promise.all([
+          getProducts(state.admin.token),
+          getOrders(state.admin.token)
+        ]);
+        setState(prev => prev ? {
+          ...prev,
+          products: remoteProducts.length ? remoteProducts.map(mapRemoteProduct) : prev.products,
+          orders: remoteOrders.length ? remoteOrders.map(mapRemoteOrder) : prev.orders,
+          lastSyncAt: new Date().toISOString()
+        } : prev);
+      }
       setMessage('Sincronización completada');
     } catch {
       setMessage('No se pudo sincronizar; los datos locales siguen disponibles.');
