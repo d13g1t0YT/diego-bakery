@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { Preferences } from '@capacitor/preferences';
 import { BiometricAuth } from '@aparajita/capacitor-biometric-auth';
-import { apiConfigured, getCloudState, getOrders, getProducts, login, putCloudState, uploadBackup } from './api';
+import { apiConfigured, getCloudState, getOrders, getProducts, login, putCloudState, submitPublicOrder, uploadBackup } from './api';
 import { BusinessState, Debt, Ingredient, LocalAdmin, MoneyMove, MoneyMoveType, Order, OrderItem, OrderStatus, Product, defaultState, money, uid } from './types';
 import { csvDownload, downloadBackup, loadState, restoreBackup, saveState } from './storage';
 
@@ -385,11 +385,16 @@ export function App() {
       source: 'cliente'
     };
     addOrder(order);
+    if (online && apiConfigured()) {
+      void submitPublicOrder(order).then(
+        () => setMessage('Pedido enviado y guardado en línea.'),
+        () => setMessage('Pedido guardado sin conexión; se conservará en este dispositivo.')
+      );
+    } else {
+      setMessage('Pedido guardado sin conexión; se conservará en este dispositivo.');
+    }
     setCart([]);
     setCustomer({ name: '', phone: '', address: '', notes: '' });
-    setMessage('Pedido guardado. El administrador podrá confirmarlo.');
-    setMode('admin');
-    setLogged(false);
   }
 
   function updateOrder(id: string, patch: Partial<Order>) {
