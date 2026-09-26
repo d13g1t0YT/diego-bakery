@@ -357,6 +357,10 @@ export function App() {
 
   function logout() {
     setLogged(false);
+    setState(prev => prev && prev.admin
+      ? { ...prev, admin: { ...prev.admin, token: undefined } }
+      : prev
+    );
     void clearToken();
   }
 
