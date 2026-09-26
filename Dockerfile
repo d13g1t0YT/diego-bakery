@@ -2,23 +2,16 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Install dependencies
 COPY package*.json ./
-RUN npm install
+RUN npm install --omit=optional
 
-# Copy source
-COPY . .
+COPY tsconfig.json ./
+COPY src ./src
 
-# Build
-RUN npm run build
+RUN npm run build && npm prune --omit=dev
 
-# Expose port
+ENV NODE_ENV=production
+
 EXPOSE 3000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:3000/health', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})"
-
-# Run
-CMD ["npm", "start"]
-
+CMD ["node", "dist/index.js"]
