@@ -1,7 +1,7 @@
 import { Component, type Dispatch, type ErrorInfo, type ReactNode, type SetStateAction, useEffect, useMemo, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { Preferences } from '@capacitor/preferences';
-import { apiConfigured, getCloudState, getPublicOrders, login, pingHealth, putCloudState, submitPublicOrder, updatePublicOrderStatus, uploadBackup } from './api';
+import { apiConfigured, askBusinessAi, getCloudState, getPublicOrders, login, pingHealth, putCloudState, submitPublicOrder, updatePublicOrderStatus, uploadBackup } from './api';
 import { calculateRecipeCost, type BusinessState, type Customer, type Debt, type Ingredient, type LocalAdmin, type MoneyMove, type MoneyMoveType, type NotificationItem, type Order, type OrderItem, type OrderStatus, type Product, type Recipe, defaultState, money, uid } from './types';
 import { CashRegisterView, CombosView, CustomersView, LoyaltyView, NotificationsView, PromotionsView, RecipesView, ServicesView, SuppliersView } from './BusinessFeatures';
 import { csvDownload, downloadBackup, loadState, restoreBackup, saveState } from './storage';
@@ -10,7 +10,7 @@ type Mode = 'admin' | 'cliente';
 type Section =
   | 'inicio' | 'pedidos' | 'productos' | 'ingredientes' | 'recetas' | 'proveedores' | 'clientes'
   | 'finanzas' | 'caja' | 'deudas' | 'perdidas' | 'promociones' | 'combinaciones' | 'lealtad'
-  | 'notificaciones' | 'servicios' | 'reportes' | 'ajustes';
+  | 'notificaciones' | 'servicios' | 'reportes' | 'ajustes' | 'asistente' | 'editar';
 
 const STATUS_LABELS: Record<OrderStatus, string> = {
   pendiente: 'Pendiente',
@@ -63,6 +63,8 @@ const NAV: Array<{ id: Section; label: string; icon: string; badge?: boolean }> 
   { id: 'notificaciones', label: 'Avisos', icon: '●' },
   { id: 'servicios', label: 'Servicios', icon: '⚙' },
   { id: 'reportes', label: 'Reportes', icon: '▥' },
+  { id: 'asistente', label: 'Asistente IA', icon: '✦' },
+  { id: 'editar', label: 'Editar todo', icon: '✎' },
   { id: 'ajustes', label: 'Ajustes', icon: '☰' }
 ];
 
@@ -84,6 +86,8 @@ const sectionTitle = (section: Section): string => ({
   notificaciones: 'Avisos',
   servicios: 'Servicios',
   reportes: 'Reportes',
+  asistente: 'Asistente IA',
+  editar: 'Editar todo',
   ajustes: 'Ajustes'
 }[section]);
 
@@ -381,13 +385,25 @@ function AppInner() {
   }, [state, today, monthPrefix, pendingOrders]);
 
   function updateState(mutator: (current: BusinessState) => BusinessState) {
-    setState(prev => prev ? { ...mutator(prev), lastLocalChangeAt: new Date().toISOString() } : prev);
+    const changeAt = new Date().toISOString();
+    setState(prev => prev ? { ...mutator(prev), lastLocalChangeAt: changeAt } : prev);
     setSyncState('saving');
+    if (stateRef.current?.admin?.token && online) scheduleCloudSync();
   }
 
   function scheduleCloudSync() {
     if (syncTimer.current) window.clearTimeout(syncTimer.current);
     syncTimer.current = window.setTimeout(() => { void flushCloudSync(); }, 1200);
+  }
+
+  function commitState(value: SetStateAction<BusinessState | null>) {
+    const changeAt = new Date().toISOString();
+    setState(previous => {
+      const next = typeof value === 'function' ? value(previous) : value;
+      return next ? { ...next, lastLocalChangeAt: changeAt } : next;
+    });
+    setSyncState('saving');
+    if (stateRef.current?.admin?.token && online) scheduleCloudSync();
   }
 
   async function flushCloudSync() {
@@ -1033,7 +1049,7 @@ function AppInner() {
         {section === 'pedidos' && <OrdersView state={state} onUpdate={changeOrder} query={globalSearch} />}
         {section === 'productos' && <ProductsView products={products} onCreate={createProduct} onUpdate={updateProduct} query={globalSearch} />}
         {section === 'ingredientes' && <IngredientsView ingredients={state.ingredients} onAdd={addIngredient} onStock={changeStock} query={globalSearch} />}
-        {section === 'recetas' && <RecipesView state={state} setState={setState} />}
+        {section === 'recetas' && <RecipesView state={state} setState={commitState} />}
         {section === 'proveedores' && <SuppliersView suppliers={state.suppliers} setSuppliers={items => updateState(current => ({ ...current, suppliers: items }))} />}
         {section === 'clientes' && <CustomersView customers={state.customers} setCustomers={items => updateState(current => ({ ...current, customers: items }))} />}
         {section === 'finanzas' && <FinanceView moves={state.money} addMoney={addMoney} balance={derived.cash} />}
@@ -1044,9 +1060,11 @@ function AppInner() {
         {section === 'notificaciones' && <NotificationsView items={state.notifications} setItems={items => updateState(current => ({ ...current, notifications: items }))} />}
         {section === 'servicios' && <ServicesView services={state.services} setServices={items => updateState(current => ({ ...current, services: items }))} />}
         {section === 'deudas' && <DebtsView debts={state.debts} setDebts={items => updateState(current => ({ ...current, debts: items }))} />}
-        {section === 'perdidas' && <LossesView state={state} setState={setState} />}
+        {section === 'perdidas' && <LossesView state={state} setState={commitState} />}
         {section === 'reportes' && <ReportsView state={state} derived={derived} />}
-        {section === 'ajustes' && <SettingsView state={state} update={patch => updateState(current => ({ ...current, settings: { ...current.settings, ...patch } }))} exportBackup={() => downloadBackup(state)} onRestore={async file => { const restored = await restoreBackup(file); stateRef.current = restored; setState(restored); setMessage('Respaldo restaurado.'); }} healthCheck={async () => { try { await pingHealth(); setMessage('Servidor disponible.'); } catch { setMessage('No se pudo contactar al servidor.'); } }} />}
+        {section === 'asistente' && <BusinessAiView state={state} derived={derived} token={state.admin?.token} />}
+        {section === 'editar' && <UniversalEditor state={state} onChange={updateState} />}
+        {section === 'ajustes' && <SettingsView state={state} update={patch => updateState(current => ({ ...current, settings: { ...current.settings, ...patch } }))} exportBackup={() => downloadBackup(state)} onRestore={async file => { const restored = await restoreBackup(file); stateRef.current = restored; commitState(restored); setMessage('Respaldo restaurado.'); }} healthCheck={async () => { try { await pingHealth(); setMessage('Servidor disponible.'); } catch { setMessage('No se pudo contactar al servidor.'); } }} />}
       </main>
     </div>
   );
@@ -1416,3 +1434,215 @@ function CustomerView({ products, cart, addToCart, changeCartQuantity, customer,
 }
 
 export default App;
+
+
+type AssistantMessage = { role: 'user' | 'assistant'; content: string };
+
+function BusinessAiView({ state, derived, token }: { state: BusinessState; derived: any; token?: string }) {
+  const [messages, setMessages] = useState<AssistantMessage[]>([]);
+  const [question, setQuestion] = useState('');
+  const [loading, setLoading] = useState(false);
+  const quick = [
+    'Revisa todo mi negocio y dime qué debo corregir primero.',
+    'Haz todas las cuentas importantes y explícame si los números tienen sentido.',
+    'Revisa inventario, stock bajo, costos y pérdidas.',
+    'Revisa precios, márgenes y dime qué datos están mal o incompletos.',
+    'Analiza mis pedidos, pagos y deudas.',
+  ];
+
+  async function send(text?: string) {
+    const content = (text ?? question).trim();
+    if (!content || loading) return;
+    if (!token) {
+      setMessages(current => current.concat([{ role: 'assistant', content: 'Primero entra como administrador para conectar la IA con los datos del negocio.' }]));
+      return;
+    }
+    const nextMessages = messages.concat([{ role: 'user', content }]);
+    setMessages(nextMessages);
+    setQuestion('');
+    setLoading(true);
+    try {
+      const result = await askBusinessAi(token, content, state, messages);
+      setMessages(current => current.concat([{ role: 'assistant', content: result.answer }]));
+    } catch (error) {
+      console.error(error);
+      setMessages(current => current.concat([{ role: 'assistant', content: 'No pude consultar la IA ahora. La aplicación sigue funcionando y tus datos no se modificaron.' }]));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return <div className="content">
+    <section className="panel ai-hero">
+      <div>
+        <p className="eyebrow">ASESOR DEL NEGOCIO</p>
+        <h3>IA de Diego Bakery</h3>
+        <p className="muted">Lee tus datos actuales, hace cuentas, encuentra problemas y te explica qué significan con palabras sencillas.</p>
+      </div>
+      <div className="ai-stats">
+        <div><span>Ventas</span><b>{money(derived.sales)}</b></div>
+        <div><span>Ganancia estimada</span><b>{money(derived.estimatedProfit)}</b></div>
+        <div><span>Stock bajo</span><b>{derived.lowStock.length}</b></div>
+        <div><span>Pedidos</span><b>{state.orders.length}</b></div>
+      </div>
+    </section>
+
+    <section className="panel">
+      <div className="panel-head"><div><p className="eyebrow">ACCIONES RÁPIDAS</p><h3>Pídele una revisión completa</h3></div><span className="status">{token ? 'IA conectable' : 'Falta iniciar sesión'}</span></div>
+      <div className="ai-quick-grid">{quick.map(item => <button key={item} className="secondary" onClick={() => void send(item)} disabled={loading}>{item}</button>)}</div>
+    </section>
+
+    <section className="panel ai-chat">
+      <div className="ai-messages">
+        {messages.length === 0 ? <div className="empty">Empieza preguntando algo como: “¿Cuánto estoy ganando?” o “¿Qué debería revisar hoy?”.</div> :
+          messages.map((item, index) => <div className={'ai-message ' + item.role} key={index}><span>{item.role === 'user' ? 'Tú' : 'IA'}</span><p>{item.content}</p></div>)}
+        {loading ? <div className="ai-message assistant"><span>IA</span><p>Estoy revisando tus datos…</p></div> : null}
+      </div>
+      <div className="ai-input-row">
+        <textarea value={question} onChange={e => setQuestion(e.target.value)} placeholder="Escribe tu pregunta..." onKeyDown={e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') void send(); }} />
+        <button className="primary" onClick={() => void send()} disabled={loading || !question.trim()}>Preguntar</button>
+      </div>
+    </section>
+  </div>;
+}
+
+const EDITABLE_COLLECTIONS = [
+  { key: 'products', label: 'Productos' },
+  { key: 'ingredients', label: 'Inventario' },
+  { key: 'recipes', label: 'Recetas' },
+  { key: 'suppliers', label: 'Proveedores' },
+  { key: 'customers', label: 'Clientes' },
+  { key: 'promotions', label: 'Promociones' },
+  { key: 'combos', label: 'Combos' },
+  { key: 'loyaltyRewards', label: 'Premios de lealtad' },
+  { key: 'services', label: 'Servicios' },
+  { key: 'orders', label: 'Pedidos' },
+  { key: 'money', label: 'Movimientos de dinero' },
+  { key: 'debts', label: 'Deudas' },
+  { key: 'losses', label: 'Pérdidas' },
+  { key: 'notifications', label: 'Avisos' },
+  { key: 'reviews', label: 'Reseñas' }
+] as const;
+
+type EditableCollectionKey = typeof EDITABLE_COLLECTIONS[number]['key'];
+
+function UniversalEditor({ state, onChange }: { state: BusinessState; onChange: (mutator: (current: BusinessState) => BusinessState) => void }) {
+  const [collection, setCollection] = useState<EditableCollectionKey>('products');
+  const [selectedId, setSelectedId] = useState('');
+  const [draft, setDraft] = useState<Record<string, any> | null>(null);
+  const [advanced, setAdvanced] = useState('');
+  const items = (state[collection] as any[]) || [];
+
+  useEffect(() => {
+    const current = items.find(item => item?.id === selectedId) || items[0];
+    if (current) {
+      setSelectedId(String(current.id));
+      const copy = { ...current };
+      delete copy.token;
+      delete copy.pinHash;
+      setDraft(copy);
+      setAdvanced(JSON.stringify(
+        Object.fromEntries(Object.entries(copy).filter(([, value]) => value !== null && typeof value === 'object')),
+        null,
+        2
+      ));
+    } else {
+      setSelectedId('');
+      setDraft(null);
+      setAdvanced('{}');
+    }
+  }, [collection, state[collection], selectedId]);
+
+  function save() {
+    if (!draft) return;
+    let complex: Record<string, unknown> = {};
+    try {
+      complex = JSON.parse(advanced || '{}');
+    } catch {
+      window.alert('Revisa los detalles avanzados: deben tener un formato JSON válido.');
+      return;
+    }
+    const nextItem = { ...draft, ...complex, id: selectedId };
+    onChange(current => ({
+      ...current,
+      [collection]: ((current[collection] as any[]) || []).map(item => item.id === selectedId ? nextItem : item)
+    }));
+  }
+
+  function remove() {
+    if (!draft || !selectedId) return;
+    if (!window.confirm('¿Eliminar este elemento? Esta acción no se puede deshacer desde aquí.')) return;
+    onChange(current => ({
+      ...current,
+      [collection]: ((current[collection] as any[]) || []).filter(item => item.id !== selectedId)
+    }));
+  }
+
+  function duplicate() {
+    if (!draft) return;
+    const copy: any = { ...draft, id: uid('copy') };
+    if (typeof copy.name === 'string') copy.name = copy.name + ' (copia)';
+    if ('createdAt' in copy) copy.createdAt = new Date().toISOString();
+    onChange(current => ({
+      ...current,
+      [collection]: [copy, ...(((current[collection] as any[]) || []))]
+    }));
+    setSelectedId(copy.id);
+  }
+
+  const primitiveEntries = draft ? Object.entries(draft).filter(([key, value]) =>
+    key !== 'id' && key !== 'token' && key !== 'pinHash' &&
+    (value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean')
+  ) : [];
+
+  function updatePrimitive(key: string, value: unknown) {
+    setDraft(current => current ? { ...current, [key]: value } : current);
+  }
+
+  return <div className="content">
+    <section className="panel">
+      <div className="panel-head"><div><p className="eyebrow">CONTROL TOTAL</p><h3>Editar cualquier dato</h3></div><span className="status">Edición completa</span></div>
+      <p className="muted">Aquí puedes cambiar, duplicar o eliminar cualquier registro. Los campos simples se editan con formularios; listas y objetos se editan en “Detalles avanzados”.</p>
+      <div className="form-grid">
+        <label>Qué quieres editar<select value={collection} onChange={e => setCollection(e.target.value as EditableCollectionKey)}>{EDITABLE_COLLECTIONS.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}</select></label>
+        <label>Registro<select value={selectedId} onChange={e => setSelectedId(e.target.value)}>{items.length ? items.map(item => { const row = item as any; return <option key={row.id} value={row.id}>{String(row.name || row.customerName || row.description || row.item || row.id)}</option>; }) : <option value="">No hay registros</option>}</select></label>
+      </div>
+    </section>
+
+    {draft ? <section className="panel">
+      <div className="panel-head"><div><p className="eyebrow">CAMPOS FÁCILES</p><h3>Editar detalles</h3></div></div>
+      <div className="form-grid">
+        {primitiveEntries.map(([key, value]) => {
+          const label = friendlyFieldName(key);
+          if (typeof value === 'boolean') return <label className="toggle-row" key={key}><span><b>{label}</b></span><input type="checkbox" checked={value} onChange={e => updatePrimitive(key, e.target.checked)} /></label>;
+          return <label key={key}>{label}<input type={typeof value === 'number' ? 'number' : 'text'} value={value === null ? '' : String(value)} onChange={e => updatePrimitive(key, typeof value === 'number' ? Number(e.target.value) : e.target.value)} /></label>;
+        })}
+      </div>
+      <label>Detalles avanzados
+        <textarea className="advanced-editor" value={advanced} onChange={e => setAdvanced(e.target.value)} spellCheck={false} />
+      </label>
+      <div className="button-row">
+        <button className="primary" onClick={save}>Guardar cambios</button>
+        <button className="secondary" onClick={duplicate}>Duplicar</button>
+        <button className="danger-button" onClick={remove}>Eliminar</button>
+      </div>
+      <p className="muted small">El identificador interno no se puede cambiar porque se usa para sincronizar correctamente entre dispositivos.</p>
+    </section> : <section className="panel"><Empty text="No hay datos para editar en esta categoría." /></section>}
+  </div>;
+}
+
+function friendlyFieldName(key: string): string {
+  const labels: Record<string, string> = {
+    name: 'Nombre', phone: 'Teléfono', address: 'Dirección', customerName: 'Cliente', customerPhone: 'Teléfono del cliente',
+    description: 'Descripción', category: 'Categoría', price: 'Precio', cost: 'Costo', stock: 'Stock', minStock: 'Stock mínimo',
+    unit: 'Unidad', unitCost: 'Costo por unidad', supplier: 'Proveedor', expiration: 'Vencimiento', active: 'Activo',
+    seasonal: 'De temporada', oldPrice: 'Precio anterior', presentation: 'Presentación', quantity: 'Cantidad', amount: 'Monto',
+    paid: 'Pagado', status: 'Estado', paymentMethod: 'Forma de pago', notes: 'Notas', person: 'Persona', value: 'Valor',
+    reason: 'Motivo', title: 'Título', read: 'Leída', points: 'Puntos', discount: 'Descuento', code: 'Código',
+    minQuantity: 'Cantidad mínima', yieldUnits: 'Rendimiento', totalCost: 'Costo total', salePrice: 'Precio de venta',
+    margin: 'Margen', laborHours: 'Horas de trabajo', laborRate: 'Costo por hora', packagingCost: 'Costo de empaque',
+    utilityCost: 'Costo de utilidad', serviceCost: 'Costo de servicio', otherCost: 'Otros costos', createdAt: 'Fecha de creación',
+    date: 'Fecha', id: 'ID'
+  };
+  return labels[key] || key.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase());
+}
