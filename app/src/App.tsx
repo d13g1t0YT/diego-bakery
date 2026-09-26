@@ -1580,7 +1580,7 @@ function UniversalEditor({ state, onChange }: { state: BusinessState; onChange: 
 
   function duplicate() {
     if (!draft) return;
-    const copy = { ...draft, id: uid('copy') };
+    const copy: any = { ...draft, id: uid('copy') };
     if (typeof copy.name === 'string') copy.name = copy.name + ' (copia)';
     if ('createdAt' in copy) copy.createdAt = new Date().toISOString();
     onChange(current => ({
