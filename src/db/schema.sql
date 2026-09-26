@@ -196,3 +196,15 @@ CREATE INDEX IF NOT EXISTS idx_productos_activo ON productos(activo);
 CREATE INDEX IF NOT EXISTS idx_ingredientes_stock ON ingredientes(cantidad_en_stock);
 CREATE INDEX IF NOT EXISTS idx_movimientos_ingrediente ON movimientos_inventario(ingrediente_id);
 CREATE INDEX IF NOT EXISTS idx_pagos_orden ON pagos(orden_id);
+
+
+-- Backups cifrados a nivel de base de datos (contenido JSON del estado del negocio)
+CREATE TABLE IF NOT EXISTS copias_seguridad (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  usuario_id UUID NOT NULL REFERENCES usuarios(id),
+  contenido JSONB NOT NULL,
+  creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_copias_usuario_fecha
+  ON copias_seguridad(usuario_id, creado_en DESC);
