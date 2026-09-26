@@ -6,26 +6,52 @@ const STATE_KEY = 'business';
 
 function normalizeState(input: BusinessState): BusinessState {
   const base = defaultState();
+  const safe = input && typeof input === 'object' ? input : ({} as BusinessState);
+  const products = Array.isArray(safe.products) ? safe.products : base.products;
+  const ingredients = Array.isArray(safe.ingredients) ? safe.ingredients : [];
+  const orders = Array.isArray(safe.orders) ? safe.orders : [];
   return {
     ...base,
-    ...input,
-    products: Array.isArray(input.products) ? input.products : base.products,
-    ingredients: Array.isArray(input.ingredients) ? input.ingredients : [],
-    recipes: Array.isArray(input.recipes) ? input.recipes : [],
-    suppliers: Array.isArray(input.suppliers) ? input.suppliers : [],
-    customers: Array.isArray(input.customers) ? input.customers : [],
-    promotions: Array.isArray(input.promotions) ? input.promotions : [],
-    combos: Array.isArray(input.combos) ? input.combos : [],
-    loyaltyRewards: Array.isArray(input.loyaltyRewards) ? input.loyaltyRewards : [],
-    services: Array.isArray(input.services) ? input.services : [],
-    orders: Array.isArray(input.orders) ? input.orders : [],
-    money: Array.isArray(input.money) ? input.money : [],
-    debts: Array.isArray(input.debts) ? input.debts : [],
-    losses: Array.isArray(input.losses) ? input.losses : [],
-    notifications: Array.isArray(input.notifications) ? input.notifications : [],
-    reviews: Array.isArray(input.reviews) ? input.reviews : [],
-    cashRegister: input.cashRegister ?? base.cashRegister,
-    settings: { ...base.settings, ...(input.settings ?? {}) }
+    ...safe,
+    products: products.map(p => ({
+      ...p,
+      price: Number.isFinite(Number(p.price)) ? Number(p.price) : 0,
+      cost: Number.isFinite(Number(p.cost)) ? Number(p.cost) : 0,
+      stock: Number.isFinite(Number(p.stock)) ? Number(p.stock) : 0,
+      categories: Array.isArray(p.categories) ? p.categories : [p.category || 'General'],
+      tags: Array.isArray(p.tags) ? p.tags : [],
+      flavors: Array.isArray(p.flavors) ? p.flavors : [],
+      sizes: Array.isArray(p.sizes) ? p.sizes : []
+    })),
+    ingredients: ingredients.map(i => ({
+      ...i,
+      unitCost: Number.isFinite(Number(i.unitCost)) ? Number(i.unitCost) : 0,
+      stock: Number.isFinite(Number(i.stock)) ? Number(i.stock) : 0,
+      minStock: Number.isFinite(Number(i.minStock)) ? Number(i.minStock) : 0
+    })),
+    recipes: Array.isArray(safe.recipes) ? safe.recipes : [],
+    suppliers: Array.isArray(safe.suppliers) ? safe.suppliers : [],
+    customers: Array.isArray(safe.customers) ? safe.customers : [],
+    promotions: Array.isArray(safe.promotions) ? safe.promotions : [],
+    combos: Array.isArray(safe.combos) ? safe.combos : [],
+    loyaltyRewards: Array.isArray(safe.loyaltyRewards) ? safe.loyaltyRewards : [],
+    services: Array.isArray(safe.services) ? safe.services : [],
+    orders: orders.map(o => ({
+      ...o,
+      items: Array.isArray(o.items) ? o.items : [],
+      subtotal: Number.isFinite(Number(o.subtotal)) ? Number(o.subtotal) : 0,
+      discount: Number.isFinite(Number(o.discount)) ? Number(o.discount) : 0,
+      total: Number.isFinite(Number(o.total)) ? Number(o.total) : 0,
+      paid: Number.isFinite(Number(o.paid)) ? Number(o.paid) : 0,
+      loyaltyAwardedAt: o.loyaltyAwardedAt
+    })),
+    money: Array.isArray(safe.money) ? safe.money : [],
+    debts: Array.isArray(safe.debts) ? safe.debts : [],
+    losses: Array.isArray(safe.losses) ? safe.losses : [],
+    notifications: Array.isArray(safe.notifications) ? safe.notifications : [],
+    reviews: Array.isArray(safe.reviews) ? safe.reviews : [],
+    cashRegister: { ...base.cashRegister, ...(safe.cashRegister ?? {}) },
+    settings: { ...base.settings, ...(safe.settings ?? {}) }
   };
 }
 

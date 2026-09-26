@@ -1,23 +1,53 @@
-const CACHE = 'diego-bakery-v1';
-const CORE = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg'];
+const CACHE = 'diego-bakery-v3';
+const APP_SHELL = ['/app/index.html', '/app/manifest.webmanifest', '/app/icon.svg'];
 
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(CORE)).then(() => self.skipWaiting()));
+  event.waitUntil(
+    caches.open(CACHE)
+      .then(cache => Promise.all(APP_SHELL.map(url => cache.add(url).catch(() => undefined))))
+      .then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener('activate', event => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    caches.keys()
+      .then(keys => Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key))))
+      .then(() => self.clients.claim())
+  );
 });
 
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
+  const url = new URL(event.request.url);
+  if (!url.pathname.startsWith('/app/')) return;
+
+  const isDocument = event.request.mode === 'navigate' || event.request.destination === 'document';
+  const isLiveControl = url.pathname.endsWith('/local-loader.js') ||
+    url.pathname.endsWith('/remote-loader.js') ||
+    url.pathname.endsWith('/live-version.json');
+
+  if (isDocument || isLiveControl) {
+    event.respondWith(
+      fetch(event.request, { cache: 'no-store' })
+        .then(response => {
+          const copy = response.clone();
+          caches.open(CACHE).then(cache => cache.put(event.request, copy)).catch(() => undefined);
+          return response;
+        })
+        .catch(() => caches.match(event.request).then(cached => cached || caches.match('/app/index.html')))
+    );
+    return;
+  }
+
   event.respondWith(
-    fetch(event.request)
-      .then(response => {
+    caches.match(event.request).then(cached => {
+      if (cached) return cached;
+      return fetch(event.request).then(response => {
         const copy = response.clone();
         caches.open(CACHE).then(cache => cache.put(event.request, copy)).catch(() => undefined);
         return response;
-      })
-      .catch(() => caches.match(event.request).then(cached => cached || caches.match('/index.html')))
+      });
+    })
   );
 });

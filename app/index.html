@@ -6,32 +6,17 @@
     <meta name="theme-color" content="#f8f7f4" />
     <meta name="description" content="Diego Bakery: gestión integral del negocio y pedidos." />
     <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
     <title>Diego Bakery</title>
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module">
-      const REMOTE_LOADER = 'https://diego-bakery-api-clean-production.up.railway.app/app/remote-loader.js';
-
-      async function boot() {
-        const localDevelopment =
-          location.protocol === 'http:' &&
-          /^(localhost|127\.0\.0\.1|0\.0\.0\.0)$/.test(location.hostname);
-
-        if (!localDevelopment) {
-          try {
-            const cacheBuster = Date.now().toString();
-            await import(REMOTE_LOADER + '?v=' + cacheBuster);
-            return;
-          } catch (error) {
-            console.warn('Diego Bakery: no se pudo cargar la versión remota; usando la versión incluida.', error);
-          }
-        }
-
-        await import(/* @vite-ignore */ './local-loader.js');
-      }
-
-      void boot();
-    </script>
+    <div id="root">
+      <div class="boot-screen" aria-live="polite">
+        <div class="boot-mark">DB</div>
+        <strong>Diego Bakery</strong>
+        <span>Iniciando la aplicación…</span>
+      </div>
+    </div>
+    <script type="module" src="./boot.js"></script>
   </body>
 </html>

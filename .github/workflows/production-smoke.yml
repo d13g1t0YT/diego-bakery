@@ -1,0 +1,27 @@
+name: Production smoke test
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 * * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check health endpoint
+        run: curl --fail --silent --show-error --retry 12 --retry-delay 5 --retry-all-errors https://diego-bakery-api-clean-production.up.railway.app/health
+
+      - name: Check app entry
+        run: |
+          body="$(curl --fail --silent --show-error --retry 12 --retry-delay 5 --retry-all-errors https://diego-bakery-api-clean-production.up.railway.app/app/)"
+          echo "$body" | grep -q "Diego Bakery"
+          echo "$body" | grep -q "local-loader.js"
+
+      - name: Check live loader
+        run: |
+          loader="$(curl --fail --silent --show-error --retry 12 --retry-delay 5 --retry-all-errors "https://diego-bakery-api-clean-production.up.railway.app/app/remote-loader.js?v=smoke")"
+          echo "$loader" | grep -q "assets/"

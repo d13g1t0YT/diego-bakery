@@ -1,25 +1,47 @@
-import { BusinessState, Order, Product } from './types';
+import type { BusinessState, Order, Product } from './types';
 
-const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+const configured = (import.meta.env.VITE_API_URL || '').trim();
+const fallbackOrigin = typeof window !== 'undefined' && /^https?:$/.test(window.location.protocol)
+  ? window.location.origin
+  : '';
+const API_BASE = (configured || fallbackOrigin).replace(/\/$/, '');
+const REQUEST_TIMEOUT_MS = 12000;
 
 async function request<T>(path: string, options: RequestInit = {}, token?: string): Promise<T> {
-  if (!API_BASE) throw new Error('API no configurada');
+  if (!API_BASE) throw new Error('Servidor no configurado');
 
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   const headers = new Headers(options.headers);
-  headers.set('Content-Type', 'application/json');
-  if (token) headers.set('Authorization', `Bearer ${token}`);
+  headers.set('Accept', 'application/json');
+  if (options.body !== undefined) headers.set('Content-Type', 'application/json');
+  if (token) headers.set('Authorization', 'Bearer ' + token);
 
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers
-  });
+  try {
+    const response = await fetch(API_BASE + path, { ...options, headers, signal: controller.signal });
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      let message = body;
+      try {
+        const parsed = JSON.parse(body);
+        message = parsed?.error || parsed?.message || body;
+      } catch {
+        // Plain text response.
+      }
+      throw new Error(message || 'HTTP ' + response.status);
+    }
 
-  if (!response.ok) {
-    const body = await response.text().catch(() => '');
-    throw new Error(body || `HTTP ${response.status}`);
+    if (response.status === 204) return undefined as T;
+    const text = await response.text();
+    if (!text) return undefined as T;
+    return JSON.parse(text) as T;
+  } finally {
+    window.clearTimeout(timer);
   }
+}
 
-  return response.json() as Promise<T>;
+export async function pingHealth(): Promise<{ status: string; timestamp?: string }> {
+  return request('/health', { method: 'GET' });
 }
 
 export async function login(
@@ -42,18 +64,19 @@ export async function getOrders(token: string): Promise<Order[]> {
 
 export async function getCloudState(token: string): Promise<BusinessState> {
   const result = await request<{ contenido: BusinessState }>('/api/estado', {}, token);
-  return result.contenido;
+  return result?.contenido || ({} as BusinessState);
 }
 
 function cloudSafeState(state: BusinessState): BusinessState {
-  return state.admin ? {
+  if (!state.admin) return state;
+  return {
     ...state,
     admin: {
       name: state.admin.name,
       phone: state.admin.phone,
       pinHash: state.admin.pinHash
     }
-  } : state;
+  };
 }
 
 export async function putCloudState(token: string, state: BusinessState): Promise<void> {
@@ -98,7 +121,7 @@ export async function submitPublicOrder(order: {
 }
 
 export async function updatePublicOrderStatus(token: string, id: string, estado: string): Promise<void> {
-  await request(`/api/pedidos-publicos/${id}`, {
+  await request('/api/pedidos-publicos/' + encodeURIComponent(id), {
     method: 'PUT',
     body: JSON.stringify({ estado })
   }, token);
@@ -111,3 +134,5 @@ export async function getPublicOrders(token: string): Promise<any[]> {
 export function apiConfigured(): boolean {
   return Boolean(API_BASE);
 }
+
+export const apiBaseUrl = API_BASE;

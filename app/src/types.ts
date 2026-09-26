@@ -195,6 +195,7 @@ export interface Order {
   discountCode?: string;
   loyaltyPointsUsed?: number;
   inventoryDeducted?: boolean;
+  loyaltyAwardedAt?: string;
   source: 'admin' | 'cliente';
   remoteId?: string;
 }

@@ -1,6 +1,7 @@
 const { app, BrowserWindow, Menu, shell } = require('electron');
 const path = require('node:path');
 
+const REMOTE_URL = 'https://diego-bakery-api-clean-production.up.railway.app/app/';
 const rendererPath = path.join(__dirname, 'renderer', 'index.html');
 
 function createWindow() {
@@ -24,21 +25,29 @@ function createWindow() {
   win.removeMenu();
 
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:\/\//i.test(url)) {
-      void shell.openExternal(url);
-    }
+    if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
     return { action: 'deny' };
   });
 
+  let loadedRemote = false;
+  win.webContents.on('did-fail-load', (_event, errorCode, _errorDescription, validatedURL, isMainFrame) => {
+    if (!isMainFrame || loadedRemote) return;
+    loadedRemote = true;
+    console.warn('Diego Bakery: carga remota falló (' + errorCode + '), usando copia local.', validatedURL);
+    void win.loadFile(rendererPath);
+  });
+
   win.webContents.on('will-navigate', (event, url) => {
-    if (!url.startsWith('file://')) {
+    const allowed = url.startsWith('file://') || url.startsWith(REMOTE_URL);
+    if (!allowed) {
       event.preventDefault();
       if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
     }
   });
 
   win.once('ready-to-show', () => win.show());
-  void win.loadFile(rendererPath);
+
+  void win.loadURL(REMOTE_URL);
 }
 
 app.whenReady().then(() => {

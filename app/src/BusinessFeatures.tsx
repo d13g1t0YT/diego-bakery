@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import {
   BusinessState,
   CashRegister,
@@ -17,94 +17,134 @@ import {
 
 export function RecipesView({ state, setState }: {
   state: BusinessState;
-  setState: React.Dispatch<React.SetStateAction<BusinessState | null>>;
+  setState: Dispatch<SetStateAction<BusinessState | null>>;
 }) {
+  type DraftLine = { ingredientId: string; quantity: string };
   const [productId, setProductId] = useState(state.products[0]?.id ?? '');
   const [name, setName] = useState('');
   const [yieldUnits, setYieldUnits] = useState('1');
-  const [ingredientId, setIngredientId] = useState(state.ingredients[0]?.id ?? '');
-  const [quantity, setQuantity] = useState('');
+  const [lines, setLines] = useState<DraftLine[]>([
+    { ingredientId: state.ingredients[0]?.id ?? '', quantity: '' }
+  ]);
   const [packaging, setPackaging] = useState(String(state.settings.defaultPackagingCost));
   const [utility, setUtility] = useState(String(state.settings.defaultUtilityCost));
   const [service, setService] = useState('0');
   const [laborHours, setLaborHours] = useState('0');
   const [other, setOther] = useState('0');
 
-  const product = state.products.find(function (p) { return p.id === productId; });
-  const preview = useMemo(function () {
-    return calculateRecipeCost({
-      id: 'preview',
-      productId: productId,
-      name: name || 'Nueva receta',
-      yieldUnits: Math.max(1, Number(yieldUnits || 1)),
-      ingredients: ingredientId && Number(quantity) > 0 ? [{ ingredientId: ingredientId, quantity: Number(quantity) }] : [],
-      packagingCost: Math.max(0, Number(packaging || 0)),
-      utilityCost: Math.max(0, Number(utility || 0)),
-      serviceCost: Math.max(0, Number(service || 0)),
-      laborHours: Math.max(0, Number(laborHours || 0)),
-      laborRate: state.settings.laborRatePerHour,
-      otherCost: Math.max(0, Number(other || 0)),
-      totalCost: 0,
-      salePrice: product?.price ?? 0,
-      margin: 0
-    }, state.ingredients);
-  }, [productId, name, yieldUnits, ingredientId, quantity, packaging, utility, service, laborHours, other, state.ingredients, state.settings.laborRatePerHour, product]);
+  const product = state.products.find(p => p.id === productId);
+  const cleanLines = lines
+    .filter(line => line.ingredientId && Number(line.quantity) > 0)
+    .map(line => ({ ingredientId: line.ingredientId, quantity: Number(line.quantity) }));
+
+  const preview = useMemo(() => calculateRecipeCost({
+    id: 'preview',
+    productId,
+    name: name || 'Nueva receta',
+    yieldUnits: Math.max(1, Number(yieldUnits) || 1),
+    ingredients: cleanLines,
+    packagingCost: Math.max(0, Number(packaging) || 0),
+    utilityCost: Math.max(0, Number(utility) || 0),
+    serviceCost: Math.max(0, Number(service) || 0),
+    laborHours: Math.max(0, Number(laborHours) || 0),
+    laborRate: state.settings.laborRatePerHour,
+    otherCost: Math.max(0, Number(other) || 0),
+    totalCost: 0,
+    salePrice: product?.price ?? 0,
+    margin: 0
+  }, state.ingredients), [productId, name, yieldUnits, lines, packaging, utility, service, laborHours, other, state.ingredients, state.settings.laborRatePerHour, product]);
+
+  function updateLine(index: number, patch: Partial<DraftLine>) {
+    setLines(current => current.map((line, i) => i === index ? { ...line, ...patch } : line));
+  }
+
+  function addLine() {
+    setLines(current => current.concat([{ ingredientId: state.ingredients[0]?.id ?? '', quantity: '' }]));
+  }
+
+  function removeLine(index: number) {
+    setLines(current => current.length === 1 ? current : current.filter((_, i) => i !== index));
+  }
+
+  function resetForm() {
+    setName('');
+    setYieldUnits('1');
+    setLines([{ ingredientId: state.ingredients[0]?.id ?? '', quantity: '' }]);
+    setPackaging(String(state.settings.defaultPackagingCost));
+    setUtility(String(state.settings.defaultUtilityCost));
+    setService('0');
+    setLaborHours('0');
+    setOther('0');
+  }
 
   function create() {
-    if (!productId || !name.trim() || !ingredientId || Number(quantity) <= 0) return;
-    const recipe = calculateRecipeCost({
+    if (!productId || !name.trim() || cleanLines.length === 0 || Math.max(1, Number(yieldUnits) || 1) <= 0) return;
+    const recipe: Recipe = {
+      ...preview,
       id: uid('rec'),
-      productId: productId,
       name: name.trim(),
-      yieldUnits: Math.max(1, Number(yieldUnits || 1)),
-      ingredients: [{ ingredientId: ingredientId, quantity: Number(quantity) }],
-      packagingCost: Number(packaging || 0),
-      utilityCost: Number(utility || 0),
-      serviceCost: Number(service || 0),
-      laborHours: Number(laborHours || 0),
-      laborRate: state.settings.laborRatePerHour,
-      otherCost: Number(other || 0),
-      totalCost: 0,
-      salePrice: product?.price ?? 0,
-      margin: 0
-    }, state.ingredients);
+      ingredients: cleanLines
+    };
 
-    setState(function (prev) {
-      return prev ? {
-        ...prev,
-        recipes: [recipe].concat(prev.recipes),
-        products: prev.products.map(function (p) { return p.id === productId ? { ...p, cost: recipe.totalCost } : p; })
-      } : prev;
-    });
-    setName('');
-    setQuantity('');
+    setState(prev => prev ? {
+      ...prev,
+      recipes: [recipe, ...prev.recipes],
+      products: prev.products.map(p => p.id === productId ? { ...p, cost: recipe.totalCost } : p)
+    } : prev);
+    resetForm();
   }
 
   return <div className="content">
     <section className="panel">
-      <div className="panel-head"><div><p className="eyebrow">COSTEO REAL</p><h3>Nueva receta</h3></div></div>
-      <div className="form-grid">
-        <label>Producto<select value={productId} onChange={function(e){setProductId(e.target.value)}}>{state.products.map(function(p){return <option key={p.id} value={p.id}>{p.name}</option>})}</select></label>
-        <label>Nombre<input value={name} onChange={function(e){setName(e.target.value)}} placeholder="Ej. Queque marmoleado completo" /></label>
+      <div className="panel-head">
+        <div><p className="eyebrow">COSTEO REAL</p><h3>Nueva receta</h3></div>
+        <span className="status">Cálculo automático</span>
       </div>
+
       <div className="form-grid">
-        <label>Rendimiento<input type="number" min="1" value={yieldUnits} onChange={function(e){setYieldUnits(e.target.value)}} /></label>
-        <label>Ingrediente<select value={ingredientId} onChange={function(e){setIngredientId(e.target.value)}}>{state.ingredients.length ? state.ingredients.map(function(i){return <option key={i.id} value={i.id}>{i.name}</option>}) : <option value="">Agrega ingredientes primero</option>}</select></label>
-        <label>Cantidad<input type="number" min="0" step="0.01" value={quantity} onChange={function(e){setQuantity(e.target.value)}} /></label>
-        <label>Empaque<input type="number" min="0" step="0.01" value={packaging} onChange={function(e){setPackaging(e.target.value)}} /></label>
+        <label>Producto<select value={productId} onChange={e => setProductId(e.target.value)}>
+          {state.products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select></label>
+        <label>Nombre de receta<input value={name} onChange={e => setName(e.target.value)} placeholder="Ej. Queque marmoleado completo" /></label>
+        <label>Rendimiento<input type="number" min="1" step="1" value={yieldUnits} onChange={e => setYieldUnits(e.target.value)} /></label>
       </div>
+
+      <div className="panel-subsection">
+        <div className="panel-head"><div><p className="eyebrow">INGREDIENTES</p><h3>Composición</h3></div><button className="secondary" onClick={addLine} disabled={!state.ingredients.length}>＋ Agregar ingrediente</button></div>
+        {lines.map((line, index) => <div className="form-grid" key={index}>
+          <label>Ingrediente<select value={line.ingredientId} onChange={e => updateLine(index, { ingredientId: e.target.value })} disabled={!state.ingredients.length}>
+            {state.ingredients.length ? state.ingredients.map(i => <option key={i.id} value={i.id}>{i.name} · {i.unit}</option>) : <option value="">Agrega ingredientes primero</option>}
+          </select></label>
+          <label>Cantidad<input type="number" min="0" step="0.001" value={line.quantity} onChange={e => updateLine(index, { quantity: e.target.value })} /></label>
+          <button className="secondary" onClick={() => removeLine(index)} disabled={lines.length === 1}>Quitar</button>
+        </div>)}
+      </div>
+
       <div className="form-grid">
-        <label>Utilidades<input type="number" min="0" step="0.01" value={utility} onChange={function(e){setUtility(e.target.value)}} /></label>
-        <label>Servicios<input type="number" min="0" step="0.01" value={service} onChange={function(e){setService(e.target.value)}} /></label>
-        <label>Horas de trabajo<input type="number" min="0" step="0.25" value={laborHours} onChange={function(e){setLaborHours(e.target.value)}} /></label>
-        <label>Otros costos<input type="number" min="0" step="0.01" value={other} onChange={function(e){setOther(e.target.value)}} /></label>
+        <label>Empaque<input type="number" min="0" step="0.01" value={packaging} onChange={e => setPackaging(e.target.value)} /></label>
+        <label>Utilidades<input type="number" min="0" step="0.01" value={utility} onChange={e => setUtility(e.target.value)} /></label>
+        <label>Servicios<input type="number" min="0" step="0.01" value={service} onChange={e => setService(e.target.value)} /></label>
+        <label>Horas de trabajo<input type="number" min="0" step="0.25" value={laborHours} onChange={e => setLaborHours(e.target.value)} /></label>
+        <label>Otros costos<input type="number" min="0" step="0.01" value={other} onChange={e => setOther(e.target.value)} /></label>
       </div>
-      <div className="metric"><span>Costo real estimado por unidad</span><strong>{money(preview.totalCost)}</strong></div>
-      <button className="primary" onClick={create}>Guardar receta y actualizar costo</button>
+
+      <div className="detail-grid">
+        <div><span>Costo por unidad</span><b>{money(preview.totalCost)}</b></div>
+        <div><span>Precio de venta</span><b>{money(preview.salePrice)}</b></div>
+        <div><span>Margen</span><b className={preview.margin < 30 ? 'warning-text' : 'success-text'}>{preview.margin.toFixed(1)}%</b></div>
+        <div><span>Costo total producción</span><b>{money(preview.totalCost * Math.max(1, Number(yieldUnits) || 1))}</b></div>
+      </div>
+
+      {!state.ingredients.length ? <div className="notice">Primero agrega ingredientes en Inventario.</div> : null}
+      <button className="primary" onClick={create} disabled={!state.ingredients.length || !name.trim() || cleanLines.length === 0}>Guardar receta y actualizar costo</button>
     </section>
+
     <section className="panel">
-      <div className="panel-head"><div><p className="eyebrow">RECETAS</p><h3>Costos guardados</h3></div></div>
-      {state.recipes.length === 0 ? <div className="empty">Todavía no hay recetas.</div> : <div className="table-wrap"><table><thead><tr><th>Receta</th><th>Producto</th><th>Costo/unidad</th><th>Venta</th><th>Margen</th></tr></thead><tbody>{state.recipes.map(function(r){return <tr key={r.id}><td>{r.name}</td><td>{state.products.find(function(p){return p.id===r.productId})?.name || '—'}</td><td>{money(r.totalCost)}</td><td>{money(r.salePrice)}</td><td>{r.margin.toFixed(2)}%</td></tr>})}</tbody></table></div>}
+      <div className="panel-head"><div><p className="eyebrow">RECETAS GUARDADAS</p><h3>Costos calculados</h3></div><span className="status">{state.recipes.length} receta(s)</span></div>
+      {state.recipes.length === 0 ? <div className="empty">Todavía no hay recetas.</div> : <div className="table-wrap"><table><thead><tr><th>Receta</th><th>Producto</th><th>Ingredientes</th><th>Costo/unidad</th><th>Venta</th><th>Margen</th></tr></thead><tbody>{state.recipes.map(r => {
+        const productName = state.products.find(p => p.id === r.productId)?.name || '—';
+        return <tr key={r.id}><td><strong>{r.name}</strong><span className="sub">Rinde {r.yieldUnits}</span></td><td>{productName}</td><td>{r.ingredients.length}</td><td>{money(r.totalCost)}</td><td>{money(r.salePrice)}</td><td className={r.margin < 30 ? 'warning-text' : 'success-text'}>{r.margin.toFixed(2)}%</td></tr>;
+      })}</tbody></table></div>}
     </section>
   </div>;
 }
