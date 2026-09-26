@@ -154,3 +154,34 @@ export function ServicesView({ services, setServices }: { services:ServiceCost[]
   function add(){const n=Number(amount);if(!name.trim()||n<0)return;setServices([{id:uid('svc'),name:name.trim(),amount:n,unit:unit.trim()||'por producción',active:true}].concat(services));setName('');setAmount('');}
   return <div className="content"><section className="panel"><div className="form-grid"><input placeholder="Servicio" value={name} onChange={function(e){setName(e.target.value)}}/><input type="number" min="0" step="0.01" placeholder="Costo" value={amount} onChange={function(e){setAmount(e.target.value)}}/><input placeholder="Unidad" value={unit} onChange={function(e){setUnit(e.target.value)}}/><button className="primary" onClick={add}>Agregar</button></div></section><section className="panel">{services.length===0?<div className="empty">Ejemplos: gas, agua, electricidad, decoración, delivery.</div>:services.map(function(s){return <div className="list-row" key={s.id}><div><strong>{s.name}</strong><span>{money(s.amount)} · {s.unit}</span></div><button className="small-button" onClick={function(){setServices(services.map(function(x){return x.id===s.id?{...x,active:!x.active}:x}))}}>{s.active?'Activo':'Inactivo'}</button></div>})}</section></div>;
 }
+
+
+export function CombosView({ combos, products, setCombos }: {
+  combos: BusinessState['combos'];
+  products: Product[];
+  setCombos: (items: BusinessState['combos']) => void;
+}) {
+  const [name,setName]=useState('');
+  const [price,setPrice]=useState('');
+  const [selected,setSelected]=useState<string[]>(products.slice(0,2).map(p=>p.id));
+  function toggle(id:string){setSelected(selected.includes(id)?selected.filter(x=>x!==id):selected.concat(id));}
+  function add(){
+    const n=Number(price);
+    if(!name.trim()||!Number.isFinite(n)||n<=0||selected.length<2)return;
+    setCombos([{id:uid('combo'),name:name.trim(),productIds:selected,price:n,active:true}].concat(combos));
+    setName('');setPrice('');
+  }
+  return <div className="content">
+    <section className="panel">
+      <div className="form-grid">
+        <input placeholder="Nombre del combo" value={name} onChange={function(e){setName(e.target.value)}} />
+        <input type="number" min="0" step="0.01" placeholder="Precio del combo" value={price} onChange={function(e){setPrice(e.target.value)}} />
+      </div>
+      <div className="check-grid">{products.map(function(p){return <label className="check" key={p.id}><input type="checkbox" checked={selected.includes(p.id)} onChange={function(){toggle(p.id)}} />{p.name}</label>})}</div>
+      <button className="primary" onClick={add}>Guardar combo</button>
+    </section>
+    <section className="panel">
+      {combos.length===0?<div className="empty">No hay combos.</div>:combos.map(function(c){return <div className="list-row" key={c.id}><div><strong>{c.name}</strong><span>{c.productIds.map(function(id){return products.find(function(p){return p.id===id})?.name}).filter(Boolean).join(' + ')}</span></div><b>{money(c.price)}</b><button className="small-button" onClick={function(){setCombos(combos.map(function(x){return x.id===c.id?{...x,active:!x.active}:x}))}}>{c.active?'Activo':'Inactivo'}</button></div>})}
+    </section>
+  </div>;
+}
