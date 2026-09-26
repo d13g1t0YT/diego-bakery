@@ -1,0 +1,156 @@
+import { useMemo, useState } from 'react';
+import {
+  BusinessState,
+  CashRegister,
+  Customer,
+  LoyaltyReward,
+  MoneyMove,
+  Promotion,
+  Product,
+  Recipe,
+  ServiceCost,
+  Supplier,
+  calculateRecipeCost,
+  money,
+  uid
+} from './types';
+
+export function RecipesView({ state, setState }: {
+  state: BusinessState;
+  setState: React.Dispatch<React.SetStateAction<BusinessState | null>>;
+}) {
+  const [productId, setProductId] = useState(state.products[0]?.id ?? '');
+  const [name, setName] = useState('');
+  const [yieldUnits, setYieldUnits] = useState('1');
+  const [ingredientId, setIngredientId] = useState(state.ingredients[0]?.id ?? '');
+  const [quantity, setQuantity] = useState('');
+  const [packaging, setPackaging] = useState(String(state.settings.defaultPackagingCost));
+  const [utility, setUtility] = useState(String(state.settings.defaultUtilityCost));
+  const [service, setService] = useState('0');
+  const [laborHours, setLaborHours] = useState('0');
+  const [other, setOther] = useState('0');
+
+  const product = state.products.find(function (p) { return p.id === productId; });
+  const preview = useMemo(function () {
+    return calculateRecipeCost({
+      id: 'preview',
+      productId: productId,
+      name: name || 'Nueva receta',
+      yieldUnits: Math.max(1, Number(yieldUnits || 1)),
+      ingredients: ingredientId && Number(quantity) > 0 ? [{ ingredientId: ingredientId, quantity: Number(quantity) }] : [],
+      packagingCost: Math.max(0, Number(packaging || 0)),
+      utilityCost: Math.max(0, Number(utility || 0)),
+      serviceCost: Math.max(0, Number(service || 0)),
+      laborHours: Math.max(0, Number(laborHours || 0)),
+      laborRate: state.settings.laborRatePerHour,
+      otherCost: Math.max(0, Number(other || 0)),
+      totalCost: 0,
+      salePrice: product?.price ?? 0,
+      margin: 0
+    }, state.ingredients);
+  }, [productId, name, yieldUnits, ingredientId, quantity, packaging, utility, service, laborHours, other, state.ingredients, state.settings.laborRatePerHour, product]);
+
+  function create() {
+    if (!productId || !name.trim() || !ingredientId || Number(quantity) <= 0) return;
+    const recipe = calculateRecipeCost({
+      id: uid('rec'),
+      productId: productId,
+      name: name.trim(),
+      yieldUnits: Math.max(1, Number(yieldUnits || 1)),
+      ingredients: [{ ingredientId: ingredientId, quantity: Number(quantity) }],
+      packagingCost: Number(packaging || 0),
+      utilityCost: Number(utility || 0),
+      serviceCost: Number(service || 0),
+      laborHours: Number(laborHours || 0),
+      laborRate: state.settings.laborRatePerHour,
+      otherCost: Number(other || 0),
+      totalCost: 0,
+      salePrice: product?.price ?? 0,
+      margin: 0
+    }, state.ingredients);
+
+    setState(function (prev) {
+      return prev ? {
+        ...prev,
+        recipes: [recipe].concat(prev.recipes),
+        products: prev.products.map(function (p) { return p.id === productId ? { ...p, cost: recipe.totalCost } : p; })
+      } : prev;
+    });
+    setName('');
+    setQuantity('');
+  }
+
+  return <div className="content">
+    <section className="panel">
+      <div className="panel-head"><div><p className="eyebrow">COSTEO REAL</p><h3>Nueva receta</h3></div></div>
+      <div className="form-grid">
+        <label>Producto<select value={productId} onChange={function(e){setProductId(e.target.value)}}>{state.products.map(function(p){return <option key={p.id} value={p.id}>{p.name}</option>})}</select></label>
+        <label>Nombre<input value={name} onChange={function(e){setName(e.target.value)}} placeholder="Ej. Queque marmoleado completo" /></label>
+      </div>
+      <div className="form-grid">
+        <label>Rendimiento<input type="number" min="1" value={yieldUnits} onChange={function(e){setYieldUnits(e.target.value)}} /></label>
+        <label>Ingrediente<select value={ingredientId} onChange={function(e){setIngredientId(e.target.value)}}>{state.ingredients.length ? state.ingredients.map(function(i){return <option key={i.id} value={i.id}>{i.name}</option>}) : <option value="">Agrega ingredientes primero</option>}</select></label>
+        <label>Cantidad<input type="number" min="0" step="0.01" value={quantity} onChange={function(e){setQuantity(e.target.value)}} /></label>
+        <label>Empaque<input type="number" min="0" step="0.01" value={packaging} onChange={function(e){setPackaging(e.target.value)}} /></label>
+      </div>
+      <div className="form-grid">
+        <label>Utilidades<input type="number" min="0" step="0.01" value={utility} onChange={function(e){setUtility(e.target.value)}} /></label>
+        <label>Servicios<input type="number" min="0" step="0.01" value={service} onChange={function(e){setService(e.target.value)}} /></label>
+        <label>Horas de trabajo<input type="number" min="0" step="0.25" value={laborHours} onChange={function(e){setLaborHours(e.target.value)}} /></label>
+        <label>Otros costos<input type="number" min="0" step="0.01" value={other} onChange={function(e){setOther(e.target.value)}} /></label>
+      </div>
+      <div className="metric"><span>Costo real estimado por unidad</span><strong>{money(preview.totalCost)}</strong></div>
+      <button className="primary" onClick={create}>Guardar receta y actualizar costo</button>
+    </section>
+    <section className="panel">
+      <div className="panel-head"><div><p className="eyebrow">RECETAS</p><h3>Costos guardados</h3></div></div>
+      {state.recipes.length === 0 ? <div className="empty">Todavía no hay recetas.</div> : <div className="table-wrap"><table><thead><tr><th>Receta</th><th>Producto</th><th>Costo/unidad</th><th>Venta</th><th>Margen</th></tr></thead><tbody>{state.recipes.map(function(r){return <tr key={r.id}><td>{r.name}</td><td>{state.products.find(function(p){return p.id===r.productId})?.name || '—'}</td><td>{money(r.totalCost)}</td><td>{money(r.salePrice)}</td><td>{r.margin.toFixed(2)}%</td></tr>})}</tbody></table></div>}
+    </section>
+  </div>;
+}
+
+export function SuppliersView({ suppliers, setSuppliers }: { suppliers: Supplier[]; setSuppliers: (items: Supplier[]) => void }) {
+  const [name,setName]=useState(''); const [phone,setPhone]=useState(''); const [notes,setNotes]=useState('');
+  function add(){if(!name.trim())return;setSuppliers([{id:uid('sup'),name:name.trim(),phone:phone.trim()||undefined,notes:notes.trim()||undefined,active:true}].concat(suppliers));setName('');setPhone('');setNotes('');}
+  return <div className="content"><section className="panel"><div className="form-grid"><input placeholder="Proveedor" value={name} onChange={function(e){setName(e.target.value)}}/><input placeholder="Teléfono" value={phone} onChange={function(e){setPhone(e.target.value)}}/><input placeholder="Notas" value={notes} onChange={function(e){setNotes(e.target.value)}}/><button className="primary" onClick={add}>Agregar</button></div></section><section className="panel">{suppliers.length===0?<div className="empty">Agrega tus proveedores.</div>:suppliers.map(function(s){return <div className="list-row" key={s.id}><div><strong>{s.name}</strong><span>{s.phone||'Sin teléfono'}{s.notes ? ' · '+s.notes : ''}</span></div><button className="small-button" onClick={function(){setSuppliers(suppliers.map(function(x){return x.id===s.id?{...x,active:!x.active}:x}))}}>{s.active?'Activo':'Inactivo'}</button></div>})}</section></div>;
+}
+
+export function CustomersView({ customers, setCustomers }: { customers: Customer[]; setCustomers: (items: Customer[]) => void }) {
+  const [name,setName]=useState(''); const [phone,setPhone]=useState(''); const [address,setAddress]=useState('');
+  function add(){const p=phone.trim();if(!name.trim()||!/^\\d{6,20}$/.test(p))return;setCustomers([{id:uid('cus'),name:name.trim(),phone:p,addresses:address.trim()?[{label:'Principal',address:address.trim()}]:[],points:0,level:'Inicial',favorites:[],createdAt:new Date().toISOString()}].concat(customers));setName('');setPhone('');setAddress('');}
+  return <div className="content"><section className="panel"><div className="form-grid"><input placeholder="Cliente" value={name} onChange={function(e){setName(e.target.value)}}/><input inputMode="tel" placeholder="Teléfono" value={phone} onChange={function(e){setPhone(e.target.value)}}/><input placeholder="Dirección" value={address} onChange={function(e){setAddress(e.target.value)}}/><button className="primary" onClick={add}>Guardar cliente</button></div></section><section className="panel">{customers.length===0?<div className="empty">Todavía no hay clientes.</div>:customers.map(function(c){return <div className="list-row" key={c.id}><div><strong>{c.name}</strong><span>{c.phone} · Nivel {c.level} · {c.points} puntos</span>{c.addresses[0]&&<span>{c.addresses[0].address}</span>}</div><button className="small-button" onClick={function(){setCustomers(customers.map(function(x){return x.id===c.id?{...x,points:x.points+1}:x}))}}>+1 punto</button></div>})}</section></div>;
+}
+
+export function PromotionsView({ promotions, products, setPromotions }: { promotions: Promotion[]; products: Product[]; setPromotions: (items: Promotion[]) => void }) {
+  const [name,setName]=useState(''); const [code,setCode]=useState(''); const [type,setType]=useState<Promotion['type']>('percent'); const [value,setValue]=useState(''); const [minQty,setMinQty]=useState('2');
+  function add(){const n=Number(value);if(!name.trim()||!Number.isFinite(n)||n<0)return;setPromotions([{id:uid('promo'),name:name.trim(),code:code.trim()||undefined,type:type,value:n,minQuantity:type==='quantity'?Math.max(1,Number(minQty||1)):undefined,productIds:products.map(function(p){return p.id}),active:true}].concat(promotions));setName('');setCode('');setValue('');}
+  return <div className="content"><section className="panel"><div className="form-grid"><input placeholder="Nombre" value={name} onChange={function(e){setName(e.target.value)}}/><input placeholder="Código (opcional)" value={code} onChange={function(e){setCode(e.target.value.toUpperCase())}}/><select value={type} onChange={function(e){setType(e.target.value as Promotion['type'])}}><option value="percent">% descuento</option><option value="fixed">Monto fijo</option><option value="quantity">Por cantidad</option><option value="date_price">Precio especial</option></select><input type="number" min="0" step="0.01" placeholder="Valor" value={value} onChange={function(e){setValue(e.target.value)}}/><button className="primary" onClick={add}>Crear</button></div></section><section className="panel">{promotions.length===0?<div className="empty">No hay promociones.</div>:promotions.map(function(p){return <div className="list-row" key={p.id}><div><strong>{p.name}</strong><span>{p.code||'Sin código'} · {p.type} · {p.value}{p.type==='percent'?'%':''}</span></div><button className="small-button" onClick={function(){setPromotions(promotions.map(function(x){return x.id===p.id?{...x,active:!x.active}:x}))}}>{p.active?'Activa':'Inactiva'}</button></div>})}</section></div>;
+}
+
+export function CashRegisterView({ register, setRegister, moneyMoves }: { register: CashRegister; setRegister: (r:CashRegister)=>void; moneyMoves:MoneyMove[] }) {
+  const [opening,setOpening]=useState(String(register.openingCash||0)); const [closing,setClosing]=useState('');
+  const openedAt=register.openedAt ? new Date(register.openedAt) : null;
+  const cashSinceOpen=useMemo(function(){if(!openedAt)return 0;return moneyMoves.filter(function(m){return m.date>=openedAt.toISOString()}).reduce(function(sum,m){if(m.method&&m.method!=='efectivo')return sum;return ['gasto','retiro','pago_deuda'].includes(m.type)?sum-m.amount:sum+m.amount},0)},[moneyMoves,openedAt]);
+  const expected=Number(register.openingCash||0)+cashSinceOpen;
+  function open(){setRegister({openedAt:new Date().toISOString(),openingCash:Math.max(0,Number(opening||0))});}
+  function close(){const n=Number(closing);if(!Number.isFinite(n)||n<0)return;setRegister({...register,closedAt:new Date().toISOString(),closingCash:n});}
+  return <div className="content"><div className="metrics"><MetricBox label="Estado" value={register.openedAt&&!register.closedAt?'Caja abierta':'Caja cerrada'}/><MetricBox label="Saldo esperado" value={money(expected)}/><MetricBox label="Contado" value={register.closingCash===undefined?'—':money(register.closingCash)}/><MetricBox label="Diferencia" value={register.closingCash===undefined?'—':money(register.closingCash-expected)}/></div><section className="panel"><div className="form-grid"><label>Efectivo inicial<input type="number" min="0" step="0.01" value={opening} disabled={Boolean(register.openedAt&&!register.closedAt)} onChange={function(e){setOpening(e.target.value)}}/></label><label>Efectivo contado<input type="number" min="0" step="0.01" value={closing} disabled={!register.openedAt||Boolean(register.closedAt)} onChange={function(e){setClosing(e.target.value)}}/></label></div><div className="button-row">{(!register.openedAt||register.closedAt)&&<button className="primary" onClick={open}>Abrir caja</button>}{register.openedAt&&!register.closedAt&&<button className="primary" onClick={close}>Cerrar caja</button>}</div><p className="muted small">Yape, Plin y transferencias no se cuentan como efectivo físico.</p></section></div>;
+}
+
+function MetricBox({label,value}:{label:string;value:string}){return <div className="metric"><span>{label}</span><strong>{value}</strong></div>}
+
+export function LoyaltyView({ rewards, setRewards, customers }: { rewards:LoyaltyReward[]; setRewards:(items:LoyaltyReward[])=>void; customers:Customer[] }) {
+  const [name,setName]=useState(''); const [points,setPoints]=useState(''); const [discount,setDiscount]=useState('');
+  function add(){const p=Number(points),d=Number(discount);if(!name.trim()||p<=0||d<0)return;setRewards([{id:uid('reward'),name:name.trim(),points:p,discount:d,active:true}].concat(rewards));setName('');setPoints('');setDiscount('');}
+  return <div className="content"><section className="panel"><div className="form-grid"><input placeholder="Recompensa" value={name} onChange={function(e){setName(e.target.value)}}/><input type="number" min="1" placeholder="Puntos" value={points} onChange={function(e){setPoints(e.target.value)}}/><input type="number" min="0" step="0.01" placeholder="Descuento S/" value={discount} onChange={function(e){setDiscount(e.target.value)}}/><button className="primary" onClick={add}>Guardar</button></div></section><section className="grid-2"><div className="panel"><h3>Recompensas</h3>{rewards.length===0?<div className="empty">Sin recompensas.</div>:rewards.map(function(r){return <div className="list-row" key={r.id}><div><strong>{r.name}</strong><span>{r.points} puntos · {money(r.discount)}</span></div><button className="small-button" onClick={function(){setRewards(rewards.map(function(x){return x.id===r.id?{...x,active:!x.active}:x}))}}>{r.active?'Activa':'Inactiva'}</button></div>})}</div><div className="panel"><h3>Puntos de clientes</h3>{customers.slice(0,10).map(function(c){return <div className="list-row" key={c.id}><div><strong>{c.name}</strong><span>Nivel {c.level}</span></div><b>{c.points} pts</b></div>})}</div></section></div>;
+}
+
+export function NotificationsView({ items, setItems }: { items:BusinessState['notifications']; setItems:(items:BusinessState['notifications'])=>void }) {
+  return <div className="content"><section className="panel"><h3>Notificaciones internas</h3>{items.length===0?<div className="empty">No hay avisos.</div>:items.map(function(n){return <div className="list-row" key={n.id}><div><strong>{n.title}</strong><span>{n.message} · {new Date(n.createdAt).toLocaleString('es-PE')}</span></div><button className="small-button" onClick={function(){setItems(items.map(function(x){return x.id===n.id?{...x,read:true}:x}))}}>{n.read?'Leída':'Marcar leída'}</button></div>})}</section></div>;
+}
+
+export function ServicesView({ services, setServices }: { services:ServiceCost[]; setServices:(items:ServiceCost[])=>void }) {
+  const [name,setName]=useState(''); const [amount,setAmount]=useState(''); const [unit,setUnit]=useState('por producción');
+  function add(){const n=Number(amount);if(!name.trim()||n<0)return;setServices([{id:uid('svc'),name:name.trim(),amount:n,unit:unit.trim()||'por producción',active:true}].concat(services));setName('');setAmount('');}
+  return <div className="content"><section className="panel"><div className="form-grid"><input placeholder="Servicio" value={name} onChange={function(e){setName(e.target.value)}}/><input type="number" min="0" step="0.01" placeholder="Costo" value={amount} onChange={function(e){setAmount(e.target.value)}}/><input placeholder="Unidad" value={unit} onChange={function(e){setUnit(e.target.value)}}/><button className="primary" onClick={add}>Agregar</button></div></section><section className="panel">{services.length===0?<div className="empty">Ejemplos: gas, agua, electricidad, decoración, delivery.</div>:services.map(function(s){return <div className="list-row" key={s.id}><div><strong>{s.name}</strong><span>{money(s.amount)} · {s.unit}</span></div><button className="small-button" onClick={function(){setServices(services.map(function(x){return x.id===s.id?{...x,active:!x.active}:x}))}}>{s.active?'Activo':'Inactivo'}</button></div>})}</section></div>;
+}
