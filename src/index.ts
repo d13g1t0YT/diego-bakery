@@ -47,7 +47,15 @@ app.use('/api/estado', estadoRoutes);
 app.use('/api/pedidos-publicos', pedidosPublicosRoutes);
 
 if (process.env.NODE_ENV === 'production') {
-  app.get('/app', (_req, res) => res.redirect(308, '/app/'));
+  // Express 4 treats a trailing slash as optional by default, so a plain
+  // "/app" route also matches "/app/". Guard it explicitly to prevent a
+  // self-redirect loop.
+  app.get('/app', (req: Request, res: Response, next: NextFunction) => {
+    if (req.path === '/app') {
+      return res.redirect(308, '/app/');
+    }
+    next();
+  });
 
   app.use('/app', (_req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
