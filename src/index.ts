@@ -14,6 +14,7 @@ import productosRoutes from './routes/productos.js';
 import ordenesRoutes from './routes/ordenes.js';
 import backupRoutes from './routes/backup.js';
 import estadoRoutes from './routes/estado.js';
+import pedidosPublicosRoutes from './routes/pedidos-publicos.js';
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -38,6 +39,7 @@ app.use('/api/productos', productosRoutes);
 app.use('/api/ordenes', ordenesRoutes);
 app.use('/api/backup', backupRoutes);
 app.use('/api/estado', estadoRoutes);
+app.use('/api/pedidos-publicos', pedidosPublicosRoutes);
 
 app.use((_req: Request, res: Response) => {
   res.status(404).json({ error: 'Ruta no encontrada' });
