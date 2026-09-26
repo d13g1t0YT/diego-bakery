@@ -4,16 +4,15 @@ dotenv.config();
 
 import express, { NextFunction, Request, Response } from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import { rateLimit } from 'express-rate-limit';
 import { initializeDatabase } from './db/connection.js';
 import { runMigrations } from './db/migrate.js';
+import { ensureBootstrapAdmin } from './db/bootstrap.js';
 import authRoutes from './routes/auth.js';
 import productosRoutes from './routes/productos.js';
 import ordenesRoutes from './routes/ordenes.js';
 import backupRoutes from './routes/backup.js';
-import helmet from 'helmet';
-import { rateLimit } from 'express-rate-limit';
-import { runMigrations } from './db/migrate.js';
-import { ensureBootstrapAdmin } from './db/bootstrap.js';
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -21,8 +20,12 @@ const PORT = Number(process.env.PORT || 3000);
 app.disable('x-powered-by');
 app.use(helmet());
 app.use(cors());
-app.use(rateLimit({ windowMs: 15 * 60 * 1000, limit: 300, standardHeaders: true, legacyHeaders: false }));
-
+app.use(rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 300,
+  standardHeaders: true,
+  legacyHeaders: false
+}));
 app.use(express.json({ limit: '1mb' }));
 
 app.get('/health', (_req: Request, res: Response) => {
