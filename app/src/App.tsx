@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { Preferences } from '@capacitor/preferences';
 import { BiometricAuth } from '@aparajita/capacitor-biometric-auth';
-import { apiConfigured, getCloudState, getOrders, getProducts, login, putCloudState, submitPublicOrder, uploadBackup } from './api';
+import { apiConfigured, getCloudState, getOrders, getProducts, getPublicOrders, login, putCloudState, submitPublicOrder, uploadBackup } from './api';
 import { BusinessState, Debt, Ingredient, LocalAdmin, MoneyMove, MoneyMoveType, Order, OrderItem, OrderStatus, Product, defaultState, money, uid } from './types';
 import { csvDownload, downloadBackup, loadState, restoreBackup, saveState } from './storage';
 
@@ -132,6 +132,7 @@ export function App() {
   const cashBalance = useMemo(() => {
     if (!state) return 0;
     return state.money.reduce((sum, m) => {
+      if (m.method && m.method !== 'efectivo') return sum;
       if (m.type === 'venta' || m.type === 'inversion' || m.type === 'cobro_deuda') return sum + m.amount;
       return sum - m.amount;
     }, 0);
@@ -145,26 +146,37 @@ export function App() {
   async function refreshFromServer() {
     if (!state?.admin?.token || !online) return;
     try {
-      try {
-        const remote = await getCloudState(state.admin.token);
-        setState(prev => prev ? {
-          ...remote,
-          admin: prev.admin,
-          lastSyncAt: new Date().toISOString()
-        } : prev);
-      } catch {
-        const [remoteProducts, remoteOrders] = await Promise.all([
-          getProducts(state.admin.token),
-          getOrders(state.admin.token)
+        try {
+        const [remoteStateResult, remotePublicOrders] = await Promise.allSettled([
+          getCloudState(state.admin.token),
+          getPublicOrders(state.admin.token)
         ]);
-        setState(prev => prev ? {
-          ...prev,
-          products: remoteProducts.length ? remoteProducts.map(mapRemoteProduct) : prev.products,
-          orders: remoteOrders.length ? remoteOrders.map(mapRemoteOrder) : prev.orders,
-          lastSyncAt: new Date().toISOString()
-        } : prev);
+        setState(prev => {
+          if (!prev) return prev;
+          let next = prev;
+          if (remoteStateResult.status === 'fulfilled') {
+            next = {
+              ...remoteStateResult.value,
+              admin: prev.admin,
+              lastSyncAt: new Date().toISOString()
+            };
+          } else {
+            next = { ...next, lastSyncAt: new Date().toISOString() };
+          }
+          if (remotePublicOrders.status === 'fulfilled') {
+            const mapped = remotePublicOrders.value.map(mapPublicOrder);
+            const existingIds = new Set(next.orders.map(o => o.id));
+            next = {
+              ...next,
+              orders: next.orders.concat(mapped.filter(o => !existingIds.has(o.id)))
+            };
+          }
+          return next;
+        });
+        setMessage('Sincronización completada');
+      } catch {
+        setMessage('No se pudo sincronizar; los datos locales siguen disponibles.');
       }
-      setMessage('Sincronización completada');
     } catch {
       setMessage('No se pudo sincronizar; los datos locales siguen disponibles.');
     }
@@ -186,6 +198,34 @@ export function App() {
       flavors: [],
       sizes: [],
       presentation: ''
+    };
+  }
+
+  function mapPublicOrder(o: any): Order {
+    const rawItems = Array.isArray(o.items) ? o.items : [];
+    const items: OrderItem[] = rawItems.map((item: any) => ({
+      productId: String(item.productId ?? item.product_id ?? ''),
+      productName: String(item.productName ?? item.product_name ?? 'Producto'),
+      quantity: Math.max(1, Number(item.quantity ?? 1)),
+      unitPrice: Math.max(0, Number(item.unitPrice ?? item.unit_price ?? 0)),
+      cost: Math.max(0, Number(item.cost ?? 0)),
+      subtotal: Math.max(0, Number(item.subtotal ?? 0)),
+      customizations: typeof item.customizations === 'object' && item.customizations ? item.customizations : undefined
+    }));
+    return {
+      id: String(o.cliente_ref || o.id),
+      createdAt: new Date(o.creado_en ?? Date.now()).toISOString(),
+      customerName: String(o.cliente_nombre ?? 'Cliente'),
+      customerPhone: String(o.telefono ?? ''),
+      address: o.direccion ? String(o.direccion) : undefined,
+      notes: o.notas ? String(o.notas) : undefined,
+      items,
+      subtotal: Number(o.subtotal ?? 0),
+      discount: Number(o.descuento ?? 0),
+      total: Number(o.total ?? 0),
+      status: STATUS_LABELS[o.estado as OrderStatus] ? o.estado as OrderStatus : 'pendiente',
+      paid: 0,
+      source: 'cliente'
     };
   }
 
@@ -366,11 +406,30 @@ export function App() {
   }
 
   function submitCustomerOrder() {
-    if (!customer.name.trim() || !customer.phone.trim() || cart.length === 0) {
-      setMessage('Completa tus datos y agrega al menos un producto.');
+    if (!customer.name.trim() || !/^\\d{6,20}$/.test(customer.phone.trim()) || cart.length === 0) {
+      setMessage('Completa un nombre, un teléfono válido y agrega al menos un producto.');
       return;
     }
     const subtotal = cart.reduce((s, i) => s + i.subtotal, 0);
+    const now = new Date();
+    const promo = state.promotions.find(p =>
+      p.active &&
+      (!p.code || p.code.toUpperCase() === promoCode.trim().toUpperCase()) &&
+      (!p.startAt || new Date(p.startAt) <= now) &&
+      (!p.endAt || new Date(p.endAt) >= now)
+    );
+    const quantity = cart.reduce((s, i) => s + i.quantity, 0);
+    let discount = 0;
+    if (promo) {
+      if (promo.type === 'percent') discount = subtotal * Math.min(100, promo.value) / 100;
+      if (promo.type === 'fixed') discount = Math.min(subtotal, promo.value);
+      if (promo.type === 'quantity' && quantity >= (promo.minQuantity || 1)) discount = Math.min(subtotal, promo.value);
+      if (promo.type === 'date_price') discount = Math.max(0, subtotal - promo.value);
+    }
+    const deliveryFee = state.settings.deliveryEnabled && customer.address.trim()
+      ? Math.max(0, state.settings.deliveryFee)
+      : 0;
+    const total = Math.max(0, Number((subtotal - discount + deliveryFee).toFixed(2)));
     const order: Order = {
       id: uid('ord'),
       createdAt: new Date().toISOString(),
@@ -380,10 +439,11 @@ export function App() {
       notes: customer.notes.trim(),
       items: cart,
       subtotal,
-      discount: 0,
-      total: subtotal,
+      discount: Number(discount.toFixed(2)),
+      total,
       status: 'pendiente',
       paid: 0,
+      discountCode: promo?.code,
       source: 'cliente'
     };
     addOrder(order);
@@ -396,6 +456,7 @@ export function App() {
       setMessage('Pedido guardado sin conexión; se conservará en este dispositivo.');
     }
     setCart([]);
+    setPromoCode('');
     setCustomer({ name: '', phone: '', address: '', notes: '' });
   }
 
