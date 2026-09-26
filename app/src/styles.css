@@ -444,3 +444,7 @@ td strong{display:block}
   .cart-row{align-items:flex-start}
   .cart-controls{margin-top:2px}
 }
+
+.panel-subsection{display:grid;gap:10px;margin:12px 0 16px;padding:14px;border:1px solid var(--line);border-radius:16px;background:var(--surface-2)}
+.panel-subsection .panel-head{margin-bottom:2px}
+.dark .panel-subsection{background:#211b18}
