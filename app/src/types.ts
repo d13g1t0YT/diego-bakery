@@ -196,6 +196,7 @@ export interface Order {
   loyaltyPointsUsed?: number;
   inventoryDeducted?: boolean;
   source: 'admin' | 'cliente';
+  remoteId?: string;
 }
 
 export interface MoneyMove {
