@@ -2,7 +2,7 @@ import { Component, type Dispatch, type ErrorInfo, type ReactNode, type SetState
 import { Capacitor } from '@capacitor/core';
 import { Preferences } from '@capacitor/preferences';
 import { apiConfigured, getCloudState, getPublicOrders, login, pingHealth, putCloudState, submitPublicOrder, updatePublicOrderStatus, uploadBackup } from './api';
-import { calculateRecipeCost, type BusinessState, type Customer, type Debt, type Ingredient, type LocalAdmin, type MoneyMove, type MoneyMoveType, type Order, type OrderItem, type OrderStatus, type Product, type Recipe, defaultState, money, uid } from './types';
+import { calculateRecipeCost, type BusinessState, type Customer, type Debt, type Ingredient, type LocalAdmin, type MoneyMove, type MoneyMoveType, type NotificationItem, type Order, type OrderItem, type OrderStatus, type Product, type Recipe, defaultState, money, uid } from './types';
 import { CashRegisterView, CombosView, CustomersView, LoyaltyView, NotificationsView, PromotionsView, RecipesView, ServicesView, SuppliersView } from './BusinessFeatures';
 import { csvDownload, downloadBackup, loadState, restoreBackup, saveState } from './storage';
 
@@ -295,7 +295,7 @@ function AppInner() {
       const existing = new Set(prev.notifications
         .filter(n => n.type === 'stock' && n.createdAt.slice(0, 10) === today)
         .map(n => n.message));
-      const generated = low
+      const generated: NotificationItem[] = low
         .filter(i => !existing.has('Stock bajo: ' + i.name))
         .map(i => ({
           id: uid('not'),
@@ -1111,7 +1111,7 @@ function Dashboard({ state, derived, openSection }: { state: BusinessState; deri
         </section>
         <section className="panel">
           <div className="panel-head"><div><p className="eyebrow">ATENCIÓN</p><h3>Alertas automáticas</h3></div><button className="link-button" onClick={() => openSection('notificaciones')}>Abrir avisos →</button></div>
-          {derived.lowStock.length ? <div className="compact-list">{derived.lowStock.slice(0, 6).map(i => <button className="compact-row" key={i.id} onClick={() => openSection('ingredientes')}><span><strong>{i.name}</strong><small>Proveedor: {i.supplier || 'Sin proveedor'}</small></span><b className="danger-text">{i.stock} {i.unit}</b></button>)}</div> : <Empty text="No hay alertas de stock." />}
+          {derived.lowStock.length ? <div className="compact-list">{derived.lowStock.slice(0, 6).map((i: Ingredient) => <button className="compact-row" key={i.id} onClick={() => openSection('ingredientes')}><span><strong>{i.name}</strong><small>Proveedor: {i.supplier || 'Sin proveedor'}</small></span><b className="danger-text">{i.stock} {i.unit}</b></button>)}</div> : <Empty text="No hay alertas de stock." />}
         </section>
       </div>
       <div className="grid-3">
@@ -1384,7 +1384,7 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 function CustomerView({ products, cart, addToCart, changeCartQuantity, customer, setCustomer, promoCode, setPromoCode, promotions, combos, submit, onAdmin, theme, message, settings, addCombo }: any) {
   const [catalogQuery, setCatalogQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('Todas');
-  const categories = Array.from(new Set(products.map((p: Product) => p.category).filter(Boolean)));
+  const categories: string[] = Array.from(new Set((products as Product[]).map((p: Product) => p.category).filter(Boolean))) as string[];
   const visibleProducts = products.filter((p: Product) =>
     (categoryFilter === 'Todas' || p.category === categoryFilter) &&
     (!catalogQuery.trim() || (p.name + ' ' + p.description + ' ' + p.category).toLowerCase().includes(catalogQuery.toLowerCase()))
@@ -1406,7 +1406,7 @@ function CustomerView({ products, cart, addToCart, changeCartQuantity, customer,
       <input value={catalogQuery} onChange={e => setCatalogQuery(e.target.value)} placeholder="Buscar producto..." />
       <div className="catalog-filters">
         <button className={'small-button ' + (categoryFilter === 'Todas' ? 'active-filter' : '')} onClick={() => setCategoryFilter('Todas')}>Todas</button>
-        {categories.map((category: string) => <button key={category} className={'small-button ' + (categoryFilter === category ? 'active-filter' : '')} onClick={() => setCategoryFilter(category)}>{category}</button>)}
+        {categories.map(category => <button key={category} className={'small-button ' + (categoryFilter === category ? 'active-filter' : '')} onClick={() => setCategoryFilter(category)}>{category}</button>)}
       </div>
     </section>
     <section className="customer-products">{visibleProducts.map((p: Product) => <article className="shop-card" key={p.id}><div className="product-placeholder">{p.name.slice(0, 1)}</div><div className="shop-card-body"><span className="eyebrow">{p.category}</span><h3>{p.name}</h3><p>{p.description}</p><div className="price-row"><strong>{money(p.price)}</strong>{p.oldPrice ? <del>{money(p.oldPrice)}</del> : null}</div><button className="primary wide" onClick={() => addToCart(p)}>Agregar al carrito</button></div></article>)}</section>
