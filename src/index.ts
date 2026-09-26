@@ -5,6 +5,7 @@ dotenv.config();
 import express, { NextFunction, Request, Response } from 'express';
 import cors from 'cors';
 import { initializeDatabase } from './db/connection.js';
+import { runMigrations } from './db/migrate.js';
 import authRoutes from './routes/auth.js';
 import productosRoutes from './routes/productos.js';
 import ordenesRoutes from './routes/ordenes.js';
@@ -36,6 +37,7 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
 async function start(): Promise<void> {
   try {
     await initializeDatabase();
+    await runMigrations();
 
     const server = app.listen(PORT, '0.0.0.0', () => {
       console.log(`✓ Diego Bakery API escuchando en puerto ${PORT}`);
