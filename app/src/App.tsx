@@ -199,11 +199,25 @@ export function App() {
 
         if (remotePublicOrders.status === 'fulfilled') {
           const mapped = remotePublicOrders.value.map(mapPublicOrder);
-          const existingIds = new Set(next.orders.map(o => o.id));
+          const byRemoteId = new Map(mapped.map(o => [o.remoteId ?? o.id, o]));
+          const mergedExisting = next.orders.map(localOrder => {
+            const remoteId = localOrder.remoteId;
+            const remoteOrder = remoteId ? byRemoteId.get(remoteId) : undefined;
+            return remoteOrder
+              ? { ...localOrder, ...remoteOrder, id: localOrder.id, remoteId }
+              : localOrder;
+          });
+          const knownRemoteIds = new Set(
+            mergedExisting.map(o => o.remoteId).filter((id): id is string => Boolean(id))
+          );
+          const newRemoteOrders = mapped.filter(o => {
+            const remoteId = o.remoteId ?? o.id;
+            return !knownRemoteIds.has(remoteId);
+          });
 
           next = {
             ...next,
-            orders: next.orders.concat(mapped.filter(o => !existingIds.has(o.id)))
+            orders: mergedExisting.concat(newRemoteOrders)
           };
         }
 
