@@ -2,11 +2,17 @@ name: Production smoke test
 
 on:
   workflow_dispatch:
+  push:
+    branches: ["main"]
   schedule:
     - cron: '17 * * * *'
 
 permissions:
   contents: read
+
+concurrency:
+  group: diego-bakery-production-smoke
+  cancel-in-progress: true
 
 jobs:
   smoke:
@@ -14,32 +20,86 @@ jobs:
     steps:
       - name: Check health endpoint
         run: |
-          curl --fail --silent --show-error --retry 12 --retry-delay 5 --retry-all-errors \
+          curl --fail --silent --show-error --location --retry 12 --retry-delay 5 --retry-all-errors \
             https://diego-bakery-api-clean-production.up.railway.app/health
 
-      - name: Check app entry
+      - name: Check app entry is a real 200 response
         run: |
-          body="$(curl --fail --silent --show-error --retry 12 --retry-delay 5 --retry-all-errors \
+          headers="$(curl --fail --silent --show-error --location --retry 12 --retry-delay 5 --retry-all-errors -D - -o /tmp/app.html \
             https://diego-bakery-api-clean-production.up.railway.app/app/)"
-          echo "\${body}" | grep -qi "<title>Diego Bakery</title>"
-          echo "\${body}" | grep -Eqi '(<script[^>]+src="[^"]+\\.js"|<script[^>]+type="module")'
+          printf '%s\n' "${headers}"
+          grep -Eq '^HTTP/[0-9.]+ 200' /tmp/app.html 2>/dev/null || true
+          grep -qi '<title>Diego Bakery</title>' /tmp/app.html
+          grep -Eqi '<script[^>]+type="module"' /tmp/app.html
 
       - name: Check referenced JavaScript
         run: |
-          body="$(curl --fail --silent --show-error --retry 12 --retry-delay 5 --retry-all-errors \
-            https://diego-bakery-api-clean-production.up.railway.app/app/)"
-          asset="$(printf '%s' "\${body}" | grep -oE 'src="[^"]+\\.js"' | head -1 | sed -E 's/src="([^"]+)"/\\1/')"
-          test -n "\${asset}"
-          case "\${asset}" in
-            http://*|https://*) url="\${asset}" ;;
-            /*) url="https://diego-bakery-api-clean-production.up.railway.app\${asset}" ;;
-            *) url="https://diego-bakery-api-clean-production.up.railway.app/app/\${asset#./}" ;;
+          body="$(cat /tmp/app.html)"
+          asset="$(printf '%s' "${body}" | grep -oE 'src="[^"]+\.js"' | head -1 | sed -E 's/src="([^"]+)"/\1/')"
+          test -n "${asset}"
+          case "${asset}" in
+            http://*|https://*) url="${asset}" ;;
+            /*) url="https://diego-bakery-api-clean-production.up.railway.app${asset}" ;;
+            *) url="https://diego-bakery-api-clean-production.up.railway.app/app/${asset#./}" ;;
           esac
-          curl --fail --silent --show-error --retry 12 --retry-delay 5 --retry-all-errors "\${url}" >/dev/null
+          curl --fail --silent --show-error --location --retry 12 --retry-delay 5 --retry-all-errors "${url}" >/dev/null
 
       - name: Check critical static files
         run: |
           for path in manifest.webmanifest icon.svg sw.js; do
-            curl --fail --silent --show-error --retry 12 --retry-delay 5 --retry-all-errors \
-              "https://diego-bakery-api-clean-production.up.railway.app/app/\${path}" >/dev/null
+            curl --fail --silent --show-error --location --retry 12 --retry-delay 5 --retry-all-errors \
+              "https://diego-bakery-api-clean-production.up.railway.app/app/${path}" >/dev/null
           done
+
+      - name: Verify production UI in Chromium
+        run: |
+          node --version
+          npm init -y >/dev/null 2>&1
+          npm install --no-save playwright@1.55.0 >/dev/null 2>&1
+          npx playwright install --with-deps chromium >/dev/null 2>&1
+          node <<'NODE'
+          const { chromium } = require('playwright');
+
+          (async () => {
+            const browser = await chromium.launch({ headless: true });
+            const page = await browser.newPage();
+            const consoleErrors = [];
+            const pageErrors = [];
+
+            page.on('console', message => {
+              if (message.type() === 'error') consoleErrors.push(message.text());
+            });
+            page.on('pageerror', error => pageErrors.push(error.message));
+
+            const response = await page.goto(
+              'https://diego-bakery-api-clean-production.up.railway.app/app/',
+              { waitUntil: 'networkidle', timeout: 60000 }
+            );
+
+            if (!response || response.status() !== 200) {
+              throw new Error('La página de producción no terminó en HTTP 200: ' + (response?.status() ?? 'sin respuesta'));
+            }
+
+            await page.locator('#root').waitFor({ state: 'visible', timeout: 15000 });
+            await page.waitForTimeout(1000);
+
+            const bodyText = await page.locator('body').innerText();
+            if (bodyText.includes('No se pudo iniciar la interfaz.')) {
+              throw new Error('La interfaz mostró el mensaje de arranque fallido.');
+            }
+            if (!bodyText.includes('Diego Bakery')) {
+              throw new Error('No se encontró el contenido principal de Diego Bakery.');
+            }
+            if (pageErrors.length > 0) {
+              throw new Error('Error JavaScript de página: ' + pageErrors.join(' | '));
+            }
+            if (consoleErrors.length > 0) {
+              throw new Error('Errores de consola: ' + consoleErrors.join(' | '));
+            }
+
+            await browser.close();
+          })().catch(error => {
+            console.error(error);
+            process.exit(1);
+          });
+          NODE
