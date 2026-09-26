@@ -47,6 +47,8 @@ app.use('/api/estado', estadoRoutes);
 app.use('/api/pedidos-publicos', pedidosPublicosRoutes);
 
 if (process.env.NODE_ENV === 'production') {
+  app.get('/app', (_req, res) => res.redirect(308, '/app/'));
+
   app.use('/app', (_req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
@@ -55,7 +57,20 @@ if (process.env.NODE_ENV === 'production') {
 
   app.use('/app', express.static(frontendPath, {
     index: 'index.html',
-    fallthrough: true
+    fallthrough: true,
+    setHeaders: (res, filePath) => {
+      if (
+        filePath.endsWith('index.html') ||
+        filePath.endsWith('local-loader.js') ||
+        filePath.endsWith('remote-loader.js') ||
+        filePath.endsWith('live-version.json') ||
+        filePath.endsWith('manifest.webmanifest')
+      ) {
+        res.setHeader('Cache-Control', 'no-store, max-age=0');
+      } else if (filePath.includes('/assets/')) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      }
+    }
   }));
 
   app.get('/app/*', (_req: Request, res: Response) => {
