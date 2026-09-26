@@ -169,13 +169,14 @@ export function App() {
   const pendingOrders = state?.orders.filter(o => !['entregada', 'cancelada', 'archivada'].includes(o.status)).length ?? 0;
   const unreadNotifications = state?.notifications.filter(n => !n.read).length ?? 0;
 
-  async function refreshFromServer() {
-    if (!state?.admin?.token || !online) return;
+  async function refreshFromServer(tokenOverride?: string) {
+    const token = tokenOverride ?? state?.admin?.token;
+    if (!token || !online) return;
 
     try {
       const [remoteStateResult, remotePublicOrders] = await Promise.allSettled([
-        getCloudState(state.admin.token),
-        getPublicOrders(state.admin.token)
+        getCloudState(token),
+        getPublicOrders(token)
       ]);
 
       setState(prev => {
@@ -290,7 +291,7 @@ export function App() {
         setState(prev => prev ? { ...prev, admin } : prev);
         await writeToken(result.token);
         setLogged(true);
-        await refreshFromServer();
+        await refreshFromServer(result.token);
         return;
       } catch {
         setMessage('Inicio en línea no disponible. Intentando acceso local…');
