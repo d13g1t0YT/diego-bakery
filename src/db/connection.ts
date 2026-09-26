@@ -8,25 +8,26 @@ if (!databaseUrl) {
 
 export const pool = new Pool({
   connectionString: databaseUrl,
+  max: Number(process.env.DB_POOL_MAX || 10),
+  idleTimeoutMillis: 30_000,
+  connectionTimeoutMillis: 10_000,
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
 });
 
 pool.on('error', (err) => {
-  console.error('Unexpected error on idle client', err);
+  console.error('Unexpected error on idle database client:', err);
 });
 
-export async function initializeDatabase() {
+export async function initializeDatabase(): Promise<void> {
+  const client = await pool.connect();
   try {
-    const client = await pool.connect();
+    await client.query('SELECT 1');
     console.log('✓ Conexión a base de datos establecida');
+  } finally {
     client.release();
-  } catch (err) {
-    console.error('✗ Error al conectar a la base de datos:', err);
-    throw err;
   }
 }
 
-export async function closeDatabase() {
+export async function closeDatabase(): Promise<void> {
   await pool.end();
 }
-
