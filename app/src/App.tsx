@@ -321,7 +321,7 @@ function AppInner() {
       return {
         sales: 0, expenses: 0, investments: 0, cash: 0, todaySales: 0, monthSales: 0,
         todayOrders: 0, pending: 0, inventoryValue: 0, receivable: 0, payable: 0,
-        completedRevenue: 0, averageTicket: 0, estimatedProfit: 0, lowStock: [] as Ingredient[],
+        completedRevenue: 0, completedCost: 0, lossesValue: 0, averageTicket: 0, estimatedProfit: 0, lowStock: [] as Ingredient[],
         topProducts: [] as Array<{ name: string; quantity: number; revenue: number }>
       };
     }
@@ -349,13 +349,14 @@ function AppInner() {
 
     const completedOrders = state.orders.filter(o => o.status === 'entregada');
     const completedRevenue = completedOrders.reduce((s, o) => s + number(o.total), 0);
+    const completedCost = completedOrders.reduce((sum, order) => sum + order.items.reduce((itemSum, item) => itemSum + number(item.cost) * Math.max(0, number(item.quantity)), 0), 0);
+    const lossesValue = state.losses.reduce((s, loss) => s + number(loss.value), 0);
     const todayOrders = state.orders.filter(o => o.createdAt.slice(0, 10) === today).length;
     const inventoryValue = state.ingredients.reduce((s, i) => s + number(i.stock) * number(i.unitCost), 0);
     const receivable = state.debts.filter(d => d.type === 'cobrar' && !d.paid).reduce((s, d) => s + number(d.amount), 0);
     const payable = state.debts.filter(d => d.type === 'pagar' && !d.paid).reduce((s, d) => s + number(d.amount), 0);
     const averageTicket = completedOrders.length ? completedRevenue / completedOrders.length : 0;
-    const inventoryGrossMargin = products.reduce((s, p) => s + Math.max(0, number(p.price) - number(p.cost)) * Math.max(0, number(p.stock)), 0);
-    const estimatedProfit = sales - expenses + inventoryGrossMargin;
+    const estimatedProfit = completedRevenue - completedCost - expenses - lossesValue;
 
     const counts = new Map<string, { quantity: number; revenue: number }>();
     for (const order of state.orders) {
@@ -370,7 +371,7 @@ function AppInner() {
 
     return {
       sales, expenses, investments, cash, todaySales, monthSales, todayOrders, pending: pendingOrders,
-      inventoryValue, receivable, payable, completedRevenue, averageTicket, estimatedProfit,
+      inventoryValue, receivable, payable, completedRevenue, completedCost, lossesValue, averageTicket, estimatedProfit,
       lowStock: state.ingredients.filter(i => i.stock <= i.minStock && i.minStock > 0),
       topProducts: Array.from(counts.entries())
         .map(([name, value]) => ({ name, ...value }))
@@ -469,11 +470,38 @@ function AppInner() {
   }
 
   function mergeStateFromCloud(local: BusinessState, remote: BusinessState): BusinessState {
+    const merge = <T extends { id: string }>(cloudItems: T[] = [], localItems: T[] = []) => {
+      const seen = new Set<string>();
+      const result: T[] = [];
+      for (const item of cloudItems) {
+        seen.add(item.id);
+        result.push(item);
+      }
+      for (const item of localItems) {
+        if (!seen.has(item.id)) result.push(item);
+      }
+      return result;
+    };
     return {
       ...remote,
+      products: merge(remote.products, local.products),
+      ingredients: merge(remote.ingredients, local.ingredients),
+      recipes: merge(remote.recipes, local.recipes),
+      suppliers: merge(remote.suppliers, local.suppliers),
+      customers: merge(remote.customers, local.customers),
+      promotions: merge(remote.promotions, local.promotions),
+      combos: merge(remote.combos, local.combos),
+      loyaltyRewards: merge(remote.loyaltyRewards, local.loyaltyRewards),
+      services: merge(remote.services, local.services),
+      orders: merge(remote.orders, local.orders),
+      money: merge(remote.money, local.money),
+      debts: merge(remote.debts, local.debts),
+      losses: merge(remote.losses, local.losses),
+      notifications: merge(remote.notifications, local.notifications),
+      reviews: merge(remote.reviews, local.reviews),
       admin: local.admin,
       settings: { ...remote.settings, ...local.settings },
-      notifications: remote.notifications.length ? remote.notifications : local.notifications
+      cashRegister: { ...remote.cashRegister, ...local.cashRegister }
     };
   }
 
