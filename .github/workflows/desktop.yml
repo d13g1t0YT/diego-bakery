@@ -1,7 +1,7 @@
 name: Build Diego Bakery Desktop Windows
 
 concurrency:
-  group: diego-bakery-windows-\${{ github.ref }}
+  group: diego-bakery-windows-${{ github.ref }}
   cancel-in-progress: true
 
 on:
@@ -44,7 +44,7 @@ jobs:
       - name: Upload Windows packages
         uses: actions/upload-artifact@v4
         with:
-          name: diego-bakery-windows-\${{ github.sha }}
+          name: diego-bakery-windows-${{ github.sha }}
           path: |
             desktop/dist/*.exe
             desktop/dist/*.blockmap

@@ -1,7 +1,7 @@
 name: Build Diego Bakery Android
 
 concurrency:
-  group: diego-bakery-mobile-\${{ github.ref }}
+  group: diego-bakery-mobile-${{ github.ref }}
   cancel-in-progress: true
 
 on:
@@ -64,6 +64,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: diego-bakery-android-\${{ github.sha }}
+          name: diego-bakery-android-${{ github.sha }}
           path: app/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error

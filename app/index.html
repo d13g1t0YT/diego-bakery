@@ -28,7 +28,7 @@
           }
         }
 
-        await import('./local-loader.js');
+        await import(/* @vite-ignore */ './local-loader.js');
       }
 
       void boot();
