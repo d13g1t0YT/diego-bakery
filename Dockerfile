@@ -8,7 +8,7 @@ RUN npm install --omit=optional
 COPY tsconfig.json ./
 COPY src ./src
 
-RUN npm run build && npm prune --omit=dev
+RUN npm run build && mkdir -p dist/db && cp src/db/schema.sql dist/db/schema.sql && npm prune --omit=dev
 
 ENV NODE_ENV=production
 
