@@ -12,7 +12,7 @@ if (!root) {
 }
 
 function renderApp() {
-  createRoot(root).render(
+  createRoot(root as HTMLElement).render(
     <React.StrictMode>
       <App />
     </React.StrictMode>
