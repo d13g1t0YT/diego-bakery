@@ -13,15 +13,33 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check health endpoint
-        run: curl --fail --silent --show-error --retry 12 --retry-delay 5 --retry-all-errors https://diego-bakery-api-clean-production.up.railway.app/health
+        run: |
+          curl --fail --silent --show-error --retry 12 --retry-delay 5 --retry-all-errors \
+            https://diego-bakery-api-clean-production.up.railway.app/health
 
       - name: Check app entry
         run: |
-          body="$(curl --fail --silent --show-error --retry 12 --retry-delay 5 --retry-all-errors https://diego-bakery-api-clean-production.up.railway.app/app/)"
-          echo "$body" | grep -q "Diego Bakery"
-          echo "$body" | grep -q "local-loader.js"
+          body="$(curl --fail --silent --show-error --retry 12 --retry-delay 5 --retry-all-errors \
+            https://diego-bakery-api-clean-production.up.railway.app/app/)"
+          echo "\${body}" | grep -qi "<title>Diego Bakery</title>"
+          echo "\${body}" | grep -Eqi '(<script[^>]+src="[^"]+\\.js"|<script[^>]+type="module")'
 
-      - name: Check live loader
+      - name: Check referenced JavaScript
         run: |
-          loader="$(curl --fail --silent --show-error --retry 12 --retry-delay 5 --retry-all-errors "https://diego-bakery-api-clean-production.up.railway.app/app/remote-loader.js?v=smoke")"
-          echo "$loader" | grep -q "assets/"
+          body="$(curl --fail --silent --show-error --retry 12 --retry-delay 5 --retry-all-errors \
+            https://diego-bakery-api-clean-production.up.railway.app/app/)"
+          asset="$(printf '%s' "\${body}" | grep -oE 'src="[^"]+\\.js"' | head -1 | sed -E 's/src="([^"]+)"/\\1/')"
+          test -n "\${asset}"
+          case "\${asset}" in
+            http://*|https://*) url="\${asset}" ;;
+            /*) url="https://diego-bakery-api-clean-production.up.railway.app\${asset}" ;;
+            *) url="https://diego-bakery-api-clean-production.up.railway.app/app/\${asset#./}" ;;
+          esac
+          curl --fail --silent --show-error --retry 12 --retry-delay 5 --retry-all-errors "\${url}" >/dev/null
+
+      - name: Check critical static files
+        run: |
+          for path in manifest.webmanifest icon.svg sw.js; do
+            curl --fail --silent --show-error --retry 12 --retry-delay 5 --retry-all-errors \
+              "https://diego-bakery-api-clean-production.up.railway.app/app/\${path}" >/dev/null
+          done
