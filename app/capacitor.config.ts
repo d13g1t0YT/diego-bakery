@@ -4,7 +4,6 @@ const config: CapacitorConfig = {
   appId: 'pe.diegobakery.app',
   appName: 'Diego Bakery',
   webDir: 'dist',
-  bundledWebRuntime: false,
   android: {
     allowMixedContent: false,
     backgroundColor: '#f8f7f4'
