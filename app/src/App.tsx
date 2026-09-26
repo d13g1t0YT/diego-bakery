@@ -7,7 +7,7 @@ import { BusinessState, Debt, Ingredient, LocalAdmin, MoneyMove, MoneyMoveType, 
 import { csvDownload, downloadBackup, loadState, restoreBackup, saveState } from './storage';
 
 type Mode = 'admin' | 'cliente';
-type Section = 'inicio' | 'pedidos' | 'productos' | 'ingredientes' | 'recetas' | 'proveedores' | 'clientes' | 'finanzas' | 'caja' | 'deudas' | 'perdidas' | 'promociones' | 'lealtad' | 'notificaciones' | 'servicios' | 'reportes' | 'ajustes';
+type Section = 'inicio' | 'pedidos' | 'productos' | 'ingredientes' | 'recetas' | 'proveedores' | 'clientes' | 'finanzas' | 'caja' | 'deudas' | 'perdidas' | 'promociones' | 'combinaciones' | 'lealtad' | 'notificaciones' | 'servicios' | 'reportes' | 'ajustes';
 
 const STATUS_LABELS: Record<OrderStatus, string> = {
   pendiente: 'Pendiente',
@@ -390,6 +390,32 @@ export function App() {
     });
   }
 
+  function addCombo(combo: BusinessState['combos'][number]) {
+    const chosenProducts = combo.productIds
+      .map(id => state.products.find(p => p.id === id))
+      .filter((p): p is Product => Boolean(p));
+    const cost = chosenProducts.reduce((sum, product) => sum + product.cost, 0);
+    setCart(prev => {
+      const productId = 'combo_' + combo.id;
+      const found = prev.find(i => i.productId === productId);
+      if (found) {
+        const quantity = found.quantity + 1;
+        return prev.map(i => i.productId === productId
+          ? { ...i, quantity, subtotal: quantity * i.unitPrice }
+          : i
+        );
+      }
+      return prev.concat([{
+        productId,
+        productName: combo.name,
+        quantity: 1,
+        unitPrice: combo.price,
+        cost,
+        subtotal: combo.price
+      }]);
+    });
+  }
+
   function addToCart(product: Product) {
     setCart(prev => {
       const found = prev.find(i => i.productId === product.id);
@@ -506,11 +532,20 @@ export function App() {
         ingredients = prev.ingredients.map(ingredient => {
           let stock = ingredient.stock;
           for (const item of current.items) {
-            const recipe = prev.recipes.find(r => r.productId === item.productId);
-            if (!recipe) continue;
-            for (const line of recipe.ingredients) {
-              if (line.ingredientId === ingredient.id) {
-                stock -= (line.quantity / Math.max(1, recipe.yieldUnits)) * item.quantity;
+            const expanded = item.productId.startsWith('combo_')
+              ? (prev.combos.find(c => c.id === item.productId.slice('combo_'.length))?.productIds || []).map(productId => ({
+                  productId,
+                  quantity: item.quantity
+                }))
+              : [{ productId: item.productId, quantity: item.quantity }];
+
+            for (const entry of expanded) {
+              const recipe = prev.recipes.find(r => r.productId === entry.productId);
+              if (!recipe) continue;
+              for (const line of recipe.ingredients) {
+                if (line.ingredientId === ingredient.id) {
+                  stock -= (line.quantity / Math.max(1, recipe.yieldUnits)) * entry.quantity;
+                }
               }
             }
           }
@@ -564,7 +599,7 @@ export function App() {
     : state.settings.theme;
 
   if (mode === 'cliente') {
-    return <CustomerView products={activeProducts} cart={cart} addToCart={addToCart} customer={customer} setCustomer={setCustomer} promoCode={promoCode} setPromoCode={setPromoCode} promotions={state.promotions} combos={state.combos} submit={submitCustomerOrder} onAdmin={() => setMode('admin')} theme={theme} message={message} settings={state.settings} />;
+    return <CustomerView products={activeProducts} cart={cart} addToCart={addToCart} addCombo={addCombo} customer={customer} setCustomer={setCustomer} promoCode={promoCode} setPromoCode={setPromoCode} promotions={state.promotions} combos={state.combos} submit={submitCustomerOrder} onAdmin={() => setMode('admin')} theme={theme} message={message} settings={state.settings} />;
   }
 
   if (!logged) {
@@ -602,7 +637,7 @@ export function App() {
           {([
             ['inicio', 'Inicio'], ['pedidos', 'Pedidos'], ['productos', 'Productos'], ['ingredientes', 'Ingredientes'],
             ['recetas', 'Recetas'], ['proveedores', 'Proveedores'], ['clientes', 'Clientes'], ['finanzas', 'Finanzas'],
-            ['caja', 'Caja'], ['deudas', 'Deudas'], ['perdidas', 'Pérdidas'], ['promociones', 'Promociones'], ['lealtad', 'Lealtad'],
+            ['caja', 'Caja'], ['deudas', 'Deudas'], ['perdidas', 'Pérdidas'], ['promociones', 'Promociones'], ['combinaciones', 'Combos'], ['lealtad', 'Lealtad'],
             ['notificaciones', 'Avisos'], ['servicios', 'Servicios'], ['reportes', 'Reportes'], ['ajustes', 'Ajustes']
           ] as [Section,string][]).map(([id,label]) => <button key={id} className={section === id ? 'nav-item active' : 'nav-item'} onClick={() => setSection(id)}><span>{label}</span>{id === 'pedidos' && pendingOrders > 0 && <b>{pendingOrders}</b>}</button>)}
         </nav>
@@ -629,6 +664,7 @@ export function App() {
         {section === 'finanzas' && <FinanceView moves={state.money} addMoney={addMoney} balance={cashBalance} />}
         {section === 'caja' && <CashRegisterView register={state.cashRegister} setRegister={register => setState(prev => prev ? { ...prev, cashRegister: register } : prev)} moneyMoves={state.money} />}
         {section === 'promociones' && <PromotionsView promotions={state.promotions} products={state.products} setPromotions={items => setState(prev => prev ? { ...prev, promotions: items } : prev)} />}
+        {section === 'combinaciones' && <CombosView combos={state.combos} products={state.products} setCombos={items => setState(prev => prev ? { ...prev, combos: items } : prev)} />}
         {section === 'lealtad' && <LoyaltyView rewards={state.loyaltyRewards} setRewards={items => setState(prev => prev ? { ...prev, loyaltyRewards: items } : prev)} customers={state.customers} />}
         {section === 'notificaciones' && <NotificationsView items={state.notifications} setItems={items => setState(prev => prev ? { ...prev, notifications: items } : prev)} />}
         {section === 'servicios' && <ServicesView services={state.services} setServices={items => setState(prev => prev ? { ...prev, services: items } : prev)} />}
@@ -655,6 +691,7 @@ function sectionTitle(section: Section): string {
     clientes: 'Clientes',
     caja: 'Caja',
     promociones: 'Promociones y descuentos',
+    combinaciones: 'Combos',
     lealtad: 'Programa de lealtad',
     notificaciones: 'Avisos y notificaciones',
     servicios: 'Servicios y utilidades',
