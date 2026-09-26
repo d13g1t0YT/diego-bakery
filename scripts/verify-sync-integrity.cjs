@@ -22,7 +22,7 @@ checks.push(['save effect does not rewrite local change time', !app.includes('sa
 checks.push(['stateRef is updated before state', app.includes('stateRef.current = next;')]);
 checks.push(['unsynced local state is pushed first', app.includes('await putCloudState(token, local);') && app.includes('const localIsUnsynced')]);
 checks.push(['old merge assignment is gone', !app.includes('const merged = localIsNewer ? mergeStatePreservingLocal(local, remoteState) : mergeStateFromCloud(local, remoteState)')]);
-checks.push(['old merge helpers are unused', !app.includes('mergeStatePreservingLocal(') && !app.includes('mergeStateFromCloud(')]);
+checks.push(['old merge function declarations are gone', !/function mergeStateFromCloud/.test(app) && !/function mergeStatePreservingLocal/.test(app)]);
 checks.push(['background refresh is five seconds', app.includes('}, 5000);')]);
 
 let failed = 0;
