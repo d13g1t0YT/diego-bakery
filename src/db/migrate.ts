@@ -5,11 +5,15 @@ import { pool } from './connection.js';
 
 const schemaPath = join(dirname(fileURLToPath(import.meta.url)), 'schema.sql');
 
-async function runMigrations(): Promise<void> {
+export async function runMigrations(): Promise<void> {
+  const schema = await readFile(schemaPath, 'utf8');
+  await pool.query(schema);
+  console.log('✓ Migraciones ejecutadas exitosamente');
+}
+
+async function main(): Promise<void> {
   try {
-    const schema = await readFile(schemaPath, 'utf8');
-    await pool.query(schema);
-    console.log('✓ Migraciones ejecutadas exitosamente');
+    await runMigrations();
   } catch (err) {
     console.error('✗ Error al ejecutar migraciones:', err);
     process.exitCode = 1;
@@ -18,4 +22,6 @@ async function runMigrations(): Promise<void> {
   }
 }
 
-void runMigrations();
+if (import.meta.url === `file://${process.argv[1]}`) {
+  void main();
+}
