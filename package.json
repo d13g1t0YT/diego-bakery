@@ -1,0 +1,30 @@
+{
+  "name": "diego-bakery-api",
+  "version": "0.1.0",
+  "description": "Diego Bakery Admin Management System - Backend API",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "migrate": "node dist/db/migrations.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "pg": "^8.11.3",
+    "dotenv": "^16.3.1",
+    "cors": "^2.8.5",
+    "uuid": "^9.0.1",
+    "decimal.js": "^10.4.3"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.10.6",
+    "@types/pg": "^8.11.2",
+    "@types/uuid": "^9.0.7",
+    "tsx": "^4.7.0"
+  }
+}
+
