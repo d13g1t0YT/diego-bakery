@@ -1,21 +1,21 @@
-import { readFileSync } from 'fs';
-import { join } from 'path';
+import { readFile } from 'fs/promises';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
 import { pool } from './connection.js';
 
-async function runMigrations() {
-  const schemaPath = join(process.cwd(), 'src', 'db', 'schema.sql');
-  const schema = readFileSync(schemaPath, 'utf-8');
+const schemaPath = join(dirname(fileURLToPath(import.meta.url)), 'schema.sql');
 
+async function runMigrations(): Promise<void> {
   try {
+    const schema = await readFile(schemaPath, 'utf8');
     await pool.query(schema);
     console.log('✓ Migraciones ejecutadas exitosamente');
   } catch (err) {
     console.error('✗ Error al ejecutar migraciones:', err);
-    throw err;
+    process.exitCode = 1;
   } finally {
     await pool.end();
   }
 }
 
-runMigrations();
-
+void runMigrations();
