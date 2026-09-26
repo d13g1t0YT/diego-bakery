@@ -4,38 +4,57 @@ import { Capacitor } from '@capacitor/core';
 import { App } from './App';
 import './styles.css';
 
-const REMOTE_LOADER = 'https://diego-bakery-api-clean-production.up.railway.app/app/remote-loader.js';
+const REMOTE_APP = 'https://diego-bakery-api-clean-production.up.railway.app/app/';
+const root = document.getElementById('root');
+
+if (!root) {
+  throw new Error('No se encontró el contenedor raíz de Diego Bakery.');
+}
 
 function renderApp() {
-  createRoot(document.getElementById('root')!).render(
+  createRoot(root as HTMLElement).render(
     <React.StrictMode>
       <App />
     </React.StrictMode>
   );
 }
 
-async function bootNativeOrLocal() {
-  const native = Capacitor.isNativePlatform();
-  const remoteAttempted = sessionStorage.getItem('diego-bakery-remote-attempted') === '1';
+async function remoteAvailable(): Promise<boolean> {
+  try {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 5000);
+    const response = await fetch(REMOTE_APP + '?health=' + Date.now(), {
+      method: 'GET',
+      cache: 'no-store',
+      signal: controller.signal,
+      redirect: 'follow'
+    });
+    window.clearTimeout(timeout);
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
 
-  if (native && !remoteAttempted) {
-    sessionStorage.setItem('diego-bakery-remote-attempted', '1');
-    try {
-      await import(REMOTE_LOADER + '?v=' + Date.now());
+async function boot() {
+  const native = Capacitor.isNativePlatform();
+  const remoteOrigin = new URL(REMOTE_APP).origin;
+  const alreadyRemote = window.location.origin === remoteOrigin;
+
+  if (native && !alreadyRemote) {
+    if (await remoteAvailable()) {
+      window.location.replace(REMOTE_APP);
       return;
-    } catch (error) {
-      console.warn('Diego Bakery: versión remota no disponible; usando versión local.', error);
     }
   }
 
-  sessionStorage.removeItem('diego-bakery-remote-attempted');
   renderApp();
 }
 
-if ('serviceWorker' in navigator && location.pathname.startsWith('/app/')) {
+void boot();
+
+if ('serviceWorker' in navigator && window.location.pathname.startsWith('/app/')) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(() => undefined);
   });
 }
-
-void bootNativeOrLocal();
