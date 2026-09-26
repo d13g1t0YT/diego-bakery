@@ -1605,7 +1605,7 @@ function UniversalEditor({ state, onChange }: { state: BusinessState; onChange: 
       <p className="muted">Aquí puedes cambiar, duplicar o eliminar cualquier registro. Los campos simples se editan con formularios; listas y objetos se editan en “Detalles avanzados”.</p>
       <div className="form-grid">
         <label>Qué quieres editar<select value={collection} onChange={e => setCollection(e.target.value as EditableCollectionKey)}>{EDITABLE_COLLECTIONS.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}</select></label>
-        <label>Registro<select value={selectedId} onChange={e => setSelectedId(e.target.value)}>{items.length ? items.map(item => <option key={item.id} value={item.id}>{String(item.name || item.customerName || item.description || item.item || item.id)}</option>) : <option value="">No hay registros</option>}</select></label>
+        <label>Registro<select value={selectedId} onChange={e => setSelectedId(e.target.value)}>{items.length ? items.map(item => { const row = item as any; return <option key={row.id} value={row.id}>{String(row.name || row.customerName || row.description || row.item || row.id)}</option>; }) : <option value="">No hay registros</option>}</select></label>
       </div>
     </section>
 
