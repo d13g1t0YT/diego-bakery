@@ -3,7 +3,7 @@ import { Capacitor } from '@capacitor/core';
 import { Preferences } from '@capacitor/preferences';
 import { BiometricAuth } from '@aparajita/capacitor-biometric-auth';
 import { LocalNotifications } from '@capacitor/local-notifications';
-import { apiConfigured, getCloudState, getOrders, getProducts, getPublicOrders, login, putCloudState, submitPublicOrder, uploadBackup } from './api';
+import { apiConfigured, getCloudState, getOrders, getProducts, getPublicOrders, login, putCloudState, submitPublicOrder, updatePublicOrderStatus, uploadBackup } from './api';
 import { BusinessState, Debt, Ingredient, LocalAdmin, MoneyMove, MoneyMoveType, Order, OrderItem, OrderStatus, Product, defaultState, money, uid } from './types';
 import { CashRegisterView, CombosView, CustomersView, LoyaltyView, NotificationsView, PromotionsView, RecipesView, ServicesView, SuppliersView } from './BusinessFeatures';
 import { csvDownload, downloadBackup, loadState, restoreBackup, saveState } from './storage';
@@ -244,7 +244,8 @@ export function App() {
       customizations: typeof item.customizations === 'object' && item.customizations ? item.customizations : undefined
     }));
     return {
-      id: String(o.cliente_ref || o.id),
+      id: String(o.id),
+      remoteId: String(o.id),
       createdAt: new Date(o.creado_en ?? Date.now()).toISOString(),
       customerName: String(o.cliente_nombre ?? 'Cliente'),
       customerPhone: String(o.telefono ?? ''),
@@ -508,7 +509,10 @@ export function App() {
     addOrder(order);
     if (online && apiConfigured()) {
       void submitPublicOrder(order).then(
-        () => setMessage('Pedido enviado y guardado en línea.'),
+        result => {
+          setState(prev => prev ? { ...prev, orders: prev.orders.map(item => item.id === order.id ? { ...item, remoteId: result.id } : item) } : prev);
+          setMessage('Pedido enviado y guardado en línea.');
+        },
         () => setMessage('Pedido guardado sin conexión; se conservará en este dispositivo.')
       );
     } else {
@@ -622,6 +626,13 @@ export function App() {
         notifications
       };
     });
+
+    if (patch.status && current.source === 'cliente' && current.remoteId && online && apiConfigured() && state.admin?.token) {
+      void updatePublicOrderStatus(state.admin.token, current.remoteId, patch.status).then(
+        () => { void notifyNative('Diego Bakery', current.customerName + ': ' + STATUS_LABELS[patch.status as OrderStatus]); },
+        () => setMessage('El cambio quedó guardado localmente; no se pudo actualizar el pedido en línea.')
+      );
+    }
   }
 
   if (loading || !state) {
