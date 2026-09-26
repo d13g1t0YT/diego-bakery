@@ -396,6 +396,16 @@ function AppInner() {
     syncTimer.current = window.setTimeout(() => { void flushCloudSync(); }, 1200);
   }
 
+  function commitState(value: SetStateAction<BusinessState | null>) {
+    const changeAt = new Date().toISOString();
+    setState(previous => {
+      const next = typeof value === 'function' ? value(previous) : value;
+      return next ? { ...next, lastLocalChangeAt: changeAt } : next;
+    });
+    setSyncState('saving');
+    if (stateRef.current?.admin?.token && online) scheduleCloudSync();
+  }
+
   async function flushCloudSync() {
     const snapshot = stateRef.current;
     const token = snapshot?.admin?.token;
@@ -1039,7 +1049,7 @@ function AppInner() {
         {section === 'pedidos' && <OrdersView state={state} onUpdate={changeOrder} query={globalSearch} />}
         {section === 'productos' && <ProductsView products={products} onCreate={createProduct} onUpdate={updateProduct} query={globalSearch} />}
         {section === 'ingredientes' && <IngredientsView ingredients={state.ingredients} onAdd={addIngredient} onStock={changeStock} query={globalSearch} />}
-        {section === 'recetas' && <RecipesView state={state} setState={setState} />}
+        {section === 'recetas' && <RecipesView state={state} setState={commitState} />}
         {section === 'proveedores' && <SuppliersView suppliers={state.suppliers} setSuppliers={items => updateState(current => ({ ...current, suppliers: items }))} />}
         {section === 'clientes' && <CustomersView customers={state.customers} setCustomers={items => updateState(current => ({ ...current, customers: items }))} />}
         {section === 'finanzas' && <FinanceView moves={state.money} addMoney={addMoney} balance={derived.cash} />}
@@ -1050,11 +1060,11 @@ function AppInner() {
         {section === 'notificaciones' && <NotificationsView items={state.notifications} setItems={items => updateState(current => ({ ...current, notifications: items }))} />}
         {section === 'servicios' && <ServicesView services={state.services} setServices={items => updateState(current => ({ ...current, services: items }))} />}
         {section === 'deudas' && <DebtsView debts={state.debts} setDebts={items => updateState(current => ({ ...current, debts: items }))} />}
-        {section === 'perdidas' && <LossesView state={state} setState={setState} />}
+        {section === 'perdidas' && <LossesView state={state} setState={commitState} />}
         {section === 'reportes' && <ReportsView state={state} derived={derived} />}
         {section === 'asistente' && <BusinessAiView state={state} derived={derived} token={state.admin?.token} />}
         {section === 'editar' && <UniversalEditor state={state} onChange={updateState} />}
-        {section === 'ajustes' && <SettingsView state={state} update={patch => updateState(current => ({ ...current, settings: { ...current.settings, ...patch } }))} exportBackup={() => downloadBackup(state)} onRestore={async file => { const restored = await restoreBackup(file); stateRef.current = restored; setState(restored); setMessage('Respaldo restaurado.'); }} healthCheck={async () => { try { await pingHealth(); setMessage('Servidor disponible.'); } catch { setMessage('No se pudo contactar al servidor.'); } }} />}
+        {section === 'ajustes' && <SettingsView state={state} update={patch => updateState(current => ({ ...current, settings: { ...current.settings, ...patch } }))} exportBackup={() => downloadBackup(state)} onRestore={async file => { const restored = await restoreBackup(file); stateRef.current = restored; commitState(restored); setMessage('Respaldo restaurado.'); }} healthCheck={async () => { try { await pingHealth(); setMessage('Servidor disponible.'); } catch { setMessage('No se pudo contactar al servidor.'); } }} />}
       </main>
     </div>
   );
