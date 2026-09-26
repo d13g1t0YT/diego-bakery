@@ -127,7 +127,10 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    const on = () => setOnline(true);
+    const on = () => {
+      setOnline(true);
+      void refreshFromServer();
+    };
     const off = () => setOnline(false);
     window.addEventListener('online', on);
     window.addEventListener('offline', off);
@@ -135,7 +138,7 @@ export function App() {
       window.removeEventListener('online', on);
       window.removeEventListener('offline', off);
     };
-  }, []);
+  }, [state?.admin?.token]);
 
   useEffect(() => {
     if (!state) return;
