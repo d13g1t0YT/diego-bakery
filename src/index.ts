@@ -2,6 +2,8 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import express, { NextFunction, Request, Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -18,6 +20,9 @@ import pedidosPublicosRoutes from './routes/pedidos-publicos.js';
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const frontendPath = path.resolve(__dirname, '..', 'app-dist');
 
 app.disable('x-powered-by');
 app.use(helmet());
@@ -41,6 +46,27 @@ app.use('/api/backup', backupRoutes);
 app.use('/api/estado', estadoRoutes);
 app.use('/api/pedidos-publicos', pedidosPublicosRoutes);
 
+if (process.env.NODE_ENV === 'production') {
+  app.use('/app', (_req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    next();
+  });
+
+  app.use('/app', express.static(frontendPath, {
+    index: 'index.html',
+    fallthrough: true
+  }));
+
+  app.get('/app/*', (_req: Request, res: Response) => {
+    res.sendFile(path.join(frontendPath, 'index.html'));
+  });
+
+  app.get('/', (_req: Request, res: Response) => {
+    res.redirect('/app/');
+  });
+}
+
 app.use((_req: Request, res: Response) => {
   res.status(404).json({ error: 'Ruta no encontrada' });
 });
@@ -57,11 +83,14 @@ async function start(): Promise<void> {
     await ensureBootstrapAdmin();
 
     const server = app.listen(PORT, '0.0.0.0', () => {
-      console.log(`✓ Diego Bakery API escuchando en puerto ${PORT}`);
+      console.log('✓ Diego Bakery API escuchando en puerto ' + PORT);
+      if (process.env.NODE_ENV === 'production') {
+        console.log('✓ Diego Bakery App publicada en /app/');
+      }
     });
 
     const shutdown = async (signal: string) => {
-      console.log(`Recibida señal ${signal}; cerrando servidor...`);
+      console.log('Recibida señal ' + signal + '; cerrando servidor...');
       server.close(async () => {
         try {
           const { closeDatabase } = await import('./db/connection.js');
