@@ -1,4 +1,4 @@
-const CACHE = 'diego-bakery-v5';
+const CACHE = 'diego-bakery-v6';
 const APP_SHELL = ['/app/index.html', '/app/manifest.webmanifest', '/app/icon.svg'];
 
 self.addEventListener('install', event => {
