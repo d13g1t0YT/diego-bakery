@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { Preferences } from '@capacitor/preferences';
 import { BiometricAuth } from '@aparajita/capacitor-biometric-auth';
+import { LocalNotifications } from '@capacitor/local-notifications';
 import { apiConfigured, getCloudState, getOrders, getProducts, getPublicOrders, login, putCloudState, submitPublicOrder, uploadBackup } from './api';
 import { BusinessState, Debt, Ingredient, LocalAdmin, MoneyMove, MoneyMoveType, Order, OrderItem, OrderStatus, Product, defaultState, money, uid } from './types';
 import { csvDownload, downloadBackup, loadState, restoreBackup, saveState } from './storage';
@@ -53,6 +54,30 @@ async function writeToken(token: string): Promise<void> {
     else localStorage.setItem('diego-bakery-token', token);
   } catch {
     localStorage.setItem('diego-bakery-token', token);
+  }
+}
+
+async function notifyNative(title: string, body: string): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+  try {
+    const permission = await LocalNotifications.checkPermissions();
+    if (permission.display !== 'granted') {
+      const requested = await LocalNotifications.requestPermissions();
+      if (requested.display !== 'granted') return;
+    }
+    await LocalNotifications.schedule({
+      notifications: [{
+        id: Math.floor(Date.now() % 2147483000),
+        title,
+        body,
+        schedule: { at: new Date(Date.now() + 1000), allowWhileIdle: false },
+        autoCancel: true,
+        ongoing: false,
+        isExactNotification: false
+      }]
+    });
+  } catch {
+    // Notifications are optional and must never block business operations.
   }
 }
 
@@ -151,7 +176,11 @@ export function App() {
           getCloudState(state.admin.token),
           getPublicOrders(state.admin.token)
         ]);
-        setState(prev => {
+        if (patch.status && patch.status !== current.status && state.settings.notificationEnabled) {
+      void notifyNative('Diego Bakery · Pedido actualizado', current.customerName + ': ' + STATUS_LABELS[patch.status]);
+    }
+
+    setState(prev => {
           if (!prev) return prev;
           let next = prev;
           if (remoteStateResult.status === 'fulfilled') {
