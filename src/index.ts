@@ -9,12 +9,20 @@ import { runMigrations } from './db/migrate.js';
 import authRoutes from './routes/auth.js';
 import productosRoutes from './routes/productos.js';
 import ordenesRoutes from './routes/ordenes.js';
+import backupRoutes from './routes/backup.js';
+import helmet from 'helmet';
+import { rateLimit } from 'express-rate-limit';
+import { runMigrations } from './db/migrate.js';
+import { ensureBootstrapAdmin } from './db/bootstrap.js';
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 
 app.disable('x-powered-by');
+app.use(helmet());
 app.use(cors());
+app.use(rateLimit({ windowMs: 15 * 60 * 1000, limit: 300, standardHeaders: true, legacyHeaders: false }));
+
 app.use(express.json({ limit: '1mb' }));
 
 app.get('/health', (_req: Request, res: Response) => {
@@ -24,6 +32,7 @@ app.get('/health', (_req: Request, res: Response) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/productos', productosRoutes);
 app.use('/api/ordenes', ordenesRoutes);
+app.use('/api/backup', backupRoutes);
 
 app.use((_req: Request, res: Response) => {
   res.status(404).json({ error: 'Ruta no encontrada' });
@@ -38,6 +47,7 @@ async function start(): Promise<void> {
   try {
     await initializeDatabase();
     await runMigrations();
+    await ensureBootstrapAdmin();
 
     const server = app.listen(PORT, '0.0.0.0', () => {
       console.log(`✓ Diego Bakery API escuchando en puerto ${PORT}`);
