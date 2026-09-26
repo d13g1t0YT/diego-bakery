@@ -13,7 +13,7 @@ export default defineConfig({
     manifest: true,
     rollupOptions: {
       input: {
-        app: resolve(__dirname, 'src/main.tsx')
+        app: resolve(process.cwd(), 'src/main.tsx')
       }
     }
   }
