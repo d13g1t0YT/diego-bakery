@@ -434,3 +434,13 @@ td strong{display:block}
   .detail-grid{grid-template-columns:1fr}
   .global-search-results{top:92px}
 }
+
+.catalog-filters{display:flex;gap:7px;flex-wrap:wrap;margin-top:9px}
+.active-filter{background:var(--accent-soft);border-color:#d4b9aa;color:var(--accent-strong);font-weight:800}
+.cart-row{align-items:center}
+.cart-controls{display:flex;align-items:center;gap:6px;flex:0 0 auto}
+.cart-controls b{min-width:24px;text-align:center}
+@media (max-width:680px){
+  .cart-row{align-items:flex-start}
+  .cart-controls{margin-top:2px}
+}
