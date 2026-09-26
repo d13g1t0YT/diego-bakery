@@ -45,17 +45,28 @@ export async function getCloudState(token: string): Promise<BusinessState> {
   return result.contenido;
 }
 
+function cloudSafeState(state: BusinessState): BusinessState {
+  return state.admin ? {
+    ...state,
+    admin: {
+      name: state.admin.name,
+      phone: state.admin.phone,
+      pinHash: state.admin.pinHash
+    }
+  } : state;
+}
+
 export async function putCloudState(token: string, state: BusinessState): Promise<void> {
   await request('/api/estado', {
     method: 'PUT',
-    body: JSON.stringify({ state })
+    body: JSON.stringify({ state: cloudSafeState(state) })
   }, token);
 }
 
 export async function uploadBackup(token: string, state: BusinessState): Promise<void> {
   await request('/api/backup', {
     method: 'POST',
-    body: JSON.stringify({ state })
+    body: JSON.stringify({ state: cloudSafeState(state) })
   }, token);
 }
 
