@@ -208,3 +208,8 @@ CREATE TABLE IF NOT EXISTS copias_seguridad (
 
 CREATE INDEX IF NOT EXISTS idx_copias_usuario_fecha
   ON copias_seguridad(usuario_id, creado_en DESC);
+CREATE TABLE IF NOT EXISTS estados_negocio (
+  usuario_id UUID PRIMARY KEY REFERENCES usuarios(id) ON DELETE CASCADE,
+  contenido JSONB NOT NULL,
+  actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
