@@ -19,15 +19,18 @@ function readManifest() {
 }
 
 function findEntry(manifest) {
+  const preferred = manifest['index.html'];
+  if (preferred?.file) return preferred.file;
+
   const match = Object.entries(manifest).find(([, value]) =>
     value &&
     typeof value === 'object' &&
     value.isEntry &&
-    /(^|\/)src\/main\.(t|j)sx?$/.test(String(value.src || ''))
+    String(value.file || '').endsWith('.js')
   );
 
   if (!match) {
-    throw new Error('No se encontró src/main.tsx como entrada de Vite.');
+    throw new Error('No se encontró una entrada JavaScript válida en el manifiesto de Vite.');
   }
 
   return match[1].file;
