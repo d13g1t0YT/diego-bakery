@@ -5,6 +5,7 @@ import { BiometricAuth } from '@aparajita/capacitor-biometric-auth';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { apiConfigured, getCloudState, getOrders, getProducts, getPublicOrders, login, putCloudState, submitPublicOrder, uploadBackup } from './api';
 import { BusinessState, Debt, Ingredient, LocalAdmin, MoneyMove, MoneyMoveType, Order, OrderItem, OrderStatus, Product, defaultState, money, uid } from './types';
+import { CashRegisterView, CombosView, CustomersView, LoyaltyView, NotificationsView, PromotionsView, RecipesView, ServicesView, SuppliersView } from './BusinessFeatures';
 import { csvDownload, downloadBackup, loadState, restoreBackup, saveState } from './storage';
 
 type Mode = 'admin' | 'cliente';
@@ -170,42 +171,42 @@ export function App() {
 
   async function refreshFromServer() {
     if (!state?.admin?.token || !online) return;
-    try {
-        try {
-        const [remoteStateResult, remotePublicOrders] = await Promise.allSettled([
-          getCloudState(state.admin.token),
-          getPublicOrders(state.admin.token)
-        ]);
-        if (patch.status && patch.status !== current.status && state.settings.notificationEnabled) {
-      void notifyNative('Diego Bakery · Pedido actualizado', current.customerName + ': ' + STATUS_LABELS[patch.status]);
-    }
 
-    setState(prev => {
-          if (!prev) return prev;
-          let next = prev;
-          if (remoteStateResult.status === 'fulfilled') {
-            next = {
-              ...remoteStateResult.value,
-              admin: prev.admin,
-              lastSyncAt: new Date().toISOString()
-            };
-          } else {
-            next = { ...next, lastSyncAt: new Date().toISOString() };
-          }
-          if (remotePublicOrders.status === 'fulfilled') {
-            const mapped = remotePublicOrders.value.map(mapPublicOrder);
-            const existingIds = new Set(next.orders.map(o => o.id));
-            next = {
-              ...next,
-              orders: next.orders.concat(mapped.filter(o => !existingIds.has(o.id)))
-            };
-          }
-          return next;
-        });
-        setMessage('Sincronización completada');
-      } catch {
-        setMessage('No se pudo sincronizar; los datos locales siguen disponibles.');
-      }
+    try {
+      const [remoteStateResult, remotePublicOrders] = await Promise.allSettled([
+        getCloudState(state.admin.token),
+        getPublicOrders(state.admin.token)
+      ]);
+
+      setState(prev => {
+        if (!prev) return prev;
+
+        let next = prev;
+
+        if (remoteStateResult.status === 'fulfilled') {
+          next = {
+            ...remoteStateResult.value,
+            admin: prev.admin,
+            lastSyncAt: new Date().toISOString()
+          };
+        } else {
+          next = { ...next, lastSyncAt: new Date().toISOString() };
+        }
+
+        if (remotePublicOrders.status === 'fulfilled') {
+          const mapped = remotePublicOrders.value.map(mapPublicOrder);
+          const existingIds = new Set(next.orders.map(o => o.id));
+
+          next = {
+            ...next,
+            orders: next.orders.concat(mapped.filter(o => !existingIds.has(o.id)))
+          };
+        }
+
+        return next;
+      });
+
+      setMessage('Sincronización completada');
     } catch {
       setMessage('No se pudo sincronizar; los datos locales siguen disponibles.');
     }
