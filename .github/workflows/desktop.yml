@@ -1,18 +1,14 @@
 name: Build Diego Bakery Desktop Windows
 
 concurrency:
-  group: diego-bakery-desktop-${{ github.ref }}
+  group: diego-bakery-windows-\${{ github.ref }}
   cancel-in-progress: true
 
 on:
   workflow_dispatch:
-  pull_request:
   push:
     branches: ["main"]
-    paths:
-      - "app/**"
-      - "desktop/**"
-      - ".github/workflows/desktop.yml"
+  pull_request:
 
 permissions:
   contents: read
@@ -24,10 +20,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Node 24
-        uses: actions/setup-node@v5
+      - name: Node 22
+        uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 22
           cache: npm
           cache-dependency-path: |
             app/package.json
@@ -48,7 +44,7 @@ jobs:
       - name: Upload Windows packages
         uses: actions/upload-artifact@v4
         with:
-          name: diego-bakery-windows-v1
+          name: diego-bakery-windows-\${{ github.sha }}
           path: |
             desktop/dist/*.exe
             desktop/dist/*.blockmap
