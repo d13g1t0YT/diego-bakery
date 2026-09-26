@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
+import jwt, { JwtPayload } from 'jsonwebtoken';
 
 export interface AuthRequest extends Request {
   usuario?: {
@@ -9,29 +9,66 @@ export interface AuthRequest extends Request {
   };
 }
 
-const JWT_SECRET = process.env.JWT_SECRET || 'default-secret-key';
+const JWT_SECRET = process.env.JWT_SECRET;
 
-export function autenticar(req: AuthRequest, res: Response, next: NextFunction) {
-  const token = req.headers.authorization?.split(' ')[1];
+if (!JWT_SECRET && process.env.NODE_ENV === 'production') {
+  throw new Error('JWT_SECRET environment variable is not set in production');
+}
+
+const signingSecret = JWT_SECRET || 'development-only-secret-change-me';
+
+function isAuthPayload(value: string | JwtPayload): value is JwtPayload & {
+  id: string;
+  nombre: string;
+  apellido: string;
+} {
+  return (
+    typeof value !== 'string' &&
+    typeof value.id === 'string' &&
+    typeof value.nombre === 'string' &&
+    typeof value.apellido === 'string'
+  );
+}
+
+export function autenticar(req: AuthRequest, res: Response, next: NextFunction): void {
+  const authorization = req.headers.authorization;
+
+  if (!authorization?.startsWith('Bearer ')) {
+    res.status(401).json({ error: 'Token no proporcionado' });
+    return;
+  }
+
+  const token = authorization.slice('Bearer '.length).trim();
 
   if (!token) {
-    return res.status(401).json({ error: 'Token no proporcionado' });
+    res.status(401).json({ error: 'Token no proporcionado' });
+    return;
   }
 
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
-    req.usuario = decoded;
+    const decoded = jwt.verify(token, signingSecret);
+
+    if (!isAuthPayload(decoded)) {
+      res.status(401).json({ error: 'Token inválido' });
+      return;
+    }
+
+    req.usuario = {
+      id: decoded.id,
+      nombre: decoded.nombre,
+      apellido: decoded.apellido,
+    };
+
     next();
-  } catch (err) {
-    return res.status(401).json({ error: 'Token inválido' });
+  } catch {
+    res.status(401).json({ error: 'Token inválido' });
   }
 }
 
 export function generarToken(usuarioId: string, nombre: string, apellido: string): string {
   return jwt.sign(
     { id: usuarioId, nombre, apellido },
-    JWT_SECRET,
+    signingSecret,
     { expiresIn: '24h' }
   );
 }
-
