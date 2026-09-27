@@ -34,7 +34,12 @@ app.use(rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 300,
   standardHeaders: true,
-  legacyHeaders: false
+  legacyHeaders: false,
+  // La IA tiene autenticación propia y no debe consumir el límite
+  // general de solicitudes de la aplicación.
+  skip: (req) =>
+    req.path.startsWith('/api/ia') ||
+    req.path.startsWith('/api/ia-producto')
 }));
 app.use(express.json({ limit: '1mb' }));
 
