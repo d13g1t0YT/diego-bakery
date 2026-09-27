@@ -77,8 +77,10 @@ function parseIngredientLine(line: string): ParsedIngredient | null {
   // Harina: 250 g
   // 1 taza de azúcar
   // 3 huevos
-  const a = clean.match(/^([\d.,]+(?:\s*\/\s*[\d.,]+)?)\s*([A-Za-zÁÉÍÓÚÜÑñ]+)?\s+(?:de\s+)?(.+)$/i);
-  const b = clean.match(/^(.+?)\s*[:=]\s*([\d.,]+(?:\s*\/\s*[\d.,]+)?)\s*([A-Za-zÁÉÍÓÚÜÑñ]+)?$/i);
+  const normalizedRow = clean.replace(/[|\\t]+/g, ' ').replace(/\\s{2,}/g, ' ');
+  const a = normalizedRow.match(/^([\d.,]+(?:\s*\/\s*[\d.,]+)?)\s*([A-Za-zÁÉÍÓÚÜÑñ]+)?\s+(?:de\s+)?(.+)$/i);
+  const b = normalizedRow.match(/^(.+?)\s*[:=]\s*([\d.,]+(?:\s*\/\s*[\d.,]+)?)\s*([A-Za-zÁÉÍÓÚÜÑñ]+)?$/i);
+  const c = normalizedRow.match(/^(.+?)\s+([\d.,]+(?:\s*\/\s*[\d.,]+)?)\s*([A-Za-zÁÉÍÓÚÜÑñ]+)$/i);
 
   let quantity = 0;
   let unit = 'und';
@@ -92,6 +94,10 @@ function parseIngredientLine(line: string): ParsedIngredient | null {
     name = normalizeSpaces(b[1]);
     quantity = parseNumber(b[2]);
     unit = normalizeUnit(b[3] || 'und');
+  } else if (c) {
+    name = normalizeSpaces(c[1]);
+    quantity = parseNumber(c[2]);
+    unit = normalizeUnit(c[3]);
   } else {
     return null;
   }
@@ -103,10 +109,12 @@ function parseIngredientLine(line: string): ParsedIngredient | null {
 function looksLikeIngredient(line: string): boolean {
   if (!line || line.length > 160) return false;
   if (/^(ingredientes?|procedimiento|preparación|preparacion|elaboración|elaboracion|pasos?|instrucciones?|notas?|observaciones?|modo de uso|decoración|decoracion|rendimiento|porciones?)\b/i.test(line)) return false;
+  const normalized = line.replace(/[|\\t]+/g, ' ').replace(/\\s{2,}/g, ' ');
   return /^[-•●◦▪·*]\s*/.test(line)
     || /^\d+[.)]\s*/.test(line)
     || /[:=]\s*[\d.,]+/.test(line)
-    || /^[\d.,]+(?:\s*\/\s*[\d.,]+)?\s+[A-Za-zÁÉÍÓÚÜÑñ]+\s+.+$/i.test(line);
+    || /^[\d.,]+(?:\s*\/\s*[\d.,]+)?\s+[A-Za-zÁÉÍÓÚÜÑñ]+\s+.+$/i.test(normalized)
+    || /^.+\s+[\d.,]+(?:\s*\/\s*[\d.,]+)?\s+[A-Za-zÁÉÍÓÚÜÑñ]+$/i.test(normalized);
 }
 
 function sectionFromHeading(line: string): 'ingredients' | 'procedure' | 'notes' | 'other' {
