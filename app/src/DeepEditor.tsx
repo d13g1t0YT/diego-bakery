@@ -209,7 +209,7 @@ function DeepObjectEditor({value,state,onChange,path='root'}:{
       </div>)}
       <button className="secondary small" onClick={()=>{
         let item:any='';
-        if(field==='ingredients') item={ingredientId:state.ingredients[0]?.id || '',quantity:0};
+        if(field==='ingredients') item={ingredientId:state.ingredients[0]?.id || '',quantity:0,unit:state.ingredients.find(i=>i.id===state.ingredients[0]?.id)?.unit || 'g'};
         else if(field==='serviceLines') item={serviceId:state.services[0]?.id || '',quantity:1};
         else if(field==='addresses') item={label:'Nueva dirección',address:'',reference:''};
         else if(field==='options') item={label:'Nueva opción',values:[]};
