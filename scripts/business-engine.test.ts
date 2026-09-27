@@ -465,7 +465,16 @@ metricState.ingredients = [{
 metricState.recipes = [{
   ...metricState.recipes[0],
   ingredients: [{ ingredientId: 'ing_kg', quantity: 250, unit: 'g' }],
-  yieldUnits: 10
+  yieldUnits: 10,
+  useDefaultPackagingCost: false,
+  useDefaultUtilityCost: false,
+  useDefaultLaborRate: false,
+  packagingCost: 0,
+  utilityCost: 0,
+  serviceCost: 0,
+  laborHours: 0,
+  laborRate: 0,
+  otherCost: 0
 }];
 metricState.products = [{ ...metricState.products[0], cost: 0 }];
 const unitAware = recalculateBusinessState(metricState);
