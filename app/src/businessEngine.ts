@@ -253,7 +253,7 @@ export function applyBusinessChange(
   if (change.action === 'add' && change.value) {
     nextCollection = [change.value, ...current];
   } else if (change.action === 'update' && change.id) {
-    nextCollection = current.map(item => item.id === change.id ? { ...item, ...change.value } : item);
+    nextCollection = current.map(item => item.id === change.id ? { ...item, ...(change.value || {}), id: item.id } : item);
   } else if (change.action === 'delete' && change.id) {
     nextCollection = current.filter(item => item.id !== change.id);
   }
