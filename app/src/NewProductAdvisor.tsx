@@ -104,20 +104,20 @@ export function NewProductAdvisor({
         id: recipeId,
         productId,
         name: draft.name!.trim(),
-        yieldUnits: Math.max(1, Number(response?.estimate?.yieldUnits) || 1),
+        yieldUnits: Math.max(1, Number(draft.yieldUnits) || Number(response?.estimate?.yieldUnits) || 1),
         ingredients: recipeLines,
         procedure: draft.procedure || [],
         notes: [],
         serviceLines: [],
-        useDefaultPackagingCost: true,
-        useDefaultUtilityCost: true,
-        useDefaultLaborRate: true,
-        packagingCost: 0,
-        utilityCost: 0,
-        serviceCost: 0,
-        laborHours: 0,
-        laborRate: 0,
-        otherCost: 0,
+        useDefaultPackagingCost: draft.packagingCost == null,
+        useDefaultUtilityCost: draft.utilityCost == null,
+        useDefaultLaborRate: draft.laborRate == null,
+        packagingCost: Math.max(0, Number(draft.packagingCost) || 0),
+        utilityCost: Math.max(0, Number(draft.utilityCost) || 0),
+        serviceCost: Math.max(0, Number(draft.serviceCost) || 0),
+        laborHours: Math.max(0, Number(draft.laborHours) || 0),
+        laborRate: Math.max(0, Number(draft.laborRate) || 0),
+        otherCost: Math.max(0, Number(draft.otherCost) || 0),
         totalCost: 0,
         salePrice: Math.max(0, Number(draft.pricePerUnit) || 0),
         margin: 0
@@ -204,6 +204,12 @@ export function NewProductAdvisor({
           <div className="form-grid">
             <label>Nombre<input value={readyDraft.name || ''} onChange={e => setReadyDraft(current => current ? ({ ...current, name: e.target.value }) : current)} /></label>
             <label>Presentación<input value={readyDraft.presentation || ''} onChange={e => setReadyDraft(current => current ? ({ ...current, presentation: e.target.value }) : current)} /></label>
+            <label>Rendimiento<input type="number" min="1" step="0.01" value={readyDraft.yieldUnits ?? ''} onChange={e => setReadyDraft(current => current ? ({ ...current, yieldUnits: Number(e.target.value) }) : current)} /></label>
+            <label>Empaque<input type="number" step="0.01" value={readyDraft.packagingCost ?? ''} onChange={e => setReadyDraft(current => current ? ({ ...current, packagingCost: Number(e.target.value) }) : current)} /></label>
+            <label>Utilidad/energía<input type="number" step="0.01" value={readyDraft.utilityCost ?? ''} onChange={e => setReadyDraft(current => current ? ({ ...current, utilityCost: Number(e.target.value) }) : current)} /></label>
+            <label>Servicio<input type="number" step="0.01" value={readyDraft.serviceCost ?? ''} onChange={e => setReadyDraft(current => current ? ({ ...current, serviceCost: Number(e.target.value) }) : current)} /></label>
+            <label>Horas de trabajo<input type="number" step="0.01" value={readyDraft.laborHours ?? ''} onChange={e => setReadyDraft(current => current ? ({ ...current, laborHours: Number(e.target.value) }) : current)} /></label>
+            <label>Otros costos<input type="number" step="0.01" value={readyDraft.otherCost ?? ''} onChange={e => setReadyDraft(current => current ? ({ ...current, otherCost: Number(e.target.value) }) : current)} /></label>
             <label>Precio por unidad<input type="number" step="0.01" value={readyDraft.pricePerUnit ?? ''} onChange={e => setReadyDraft(current => current ? ({ ...current, pricePerUnit: Number(e.target.value) }) : current)} /></label>
             <label>Precio por lote<input type="number" step="0.01" value={readyDraft.pricePerBatch ?? ''} onChange={e => setReadyDraft(current => current ? ({ ...current, pricePerBatch: Number(e.target.value) }) : current)} /></label>
           </div>
