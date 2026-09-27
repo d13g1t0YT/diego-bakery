@@ -207,7 +207,17 @@ function DeepObjectEditor({value,state,onChange,path='root'}:{
   return <input value={value ?? ''} onChange={e=>onChange(parseScalar(e.target.value,value))}/>;
 }
 
-export function DeepEditor({state,onChange}:{state:BusinessState;onChange:(mutator:(current:BusinessState)=>BusinessState)=>void}) {
+export function DeepEditor({
+  state,
+  onChange,
+  onAdminSave,
+  onAdminPinChange
+}: {
+  state: BusinessState;
+  onChange: (mutator: (current: BusinessState) => BusinessState) => void;
+  onAdminSave?: (profile: { name: string; phone: string }) => Promise<void>;
+  onAdminPinChange?: (pin: string) => Promise<void>;
+}) {
   const [collection,setCollection]=useState<CollectionKey>('products');
   const [selectedId,setSelectedId]=useState('');
   const [draft,setDraft]=useState<any|null>(null);
@@ -232,7 +242,7 @@ export function DeepEditor({state,onChange}:{state:BusinessState;onChange:(mutat
     onChange(current=>recalculateBusinessState({...current,[collection]:[item,...((current as any)[collection]||[])]} as BusinessState,current));
     setSelectedId(item.id); setDraft(structuredClone(item));
   }
-  function save() {
+  async function save() {
     if (!draft) return;
     const clean=structuredClone(draft);
     if (singleton) {
@@ -240,15 +250,42 @@ export function DeepEditor({state,onChange}:{state:BusinessState;onChange:(mutat
       if (collection === 'admin') {
         delete clean.token;
         delete clean.pinHash;
-        onChange(current => recalculateBusinessState({
-          ...current,
-          admin: { ...(current.admin || { name: '', phone: '', pinHash: '' }), ...clean }
-        } as BusinessState, current));
+        try {
+          if (onAdminSave) await onAdminSave({ name: String(clean.name || ''), phone: String(clean.phone || '') });
+          onChange(current => recalculateBusinessState({
+            ...current,
+            admin: { ...(current.admin || { name: '', phone: '', pinHash: '' }), ...clean }
+          } as BusinessState, current));
+        } catch (error) {
+          window.alert(error instanceof Error ? error.message : 'No se pudo actualizar la cuenta.');
+        }
       } else {
         onChange(current=>recalculateBusinessState({...current,[collection]:clean} as BusinessState,current));
       }
     }
     else onChange(current=>recalculateBusinessState({...current,[collection]:((current as any)[collection]||[]).map((x:any)=>x.id===selectedId?{...clean,id:selectedId}:x)} as BusinessState,current));
+  }
+
+  async function changePin() {
+    if (collection !== 'admin' || !onAdminPinChange) return;
+    const pin = window.prompt('Nuevo PIN de administrador (4 a 12 dígitos):', '');
+    if (pin === null) return;
+    const clean = pin.replace(/\D/g, '');
+    if (clean.length < 4 || clean.length > 12) {
+      window.alert('El PIN debe tener entre 4 y 12 dígitos.');
+      return;
+    }
+    const confirmation = window.prompt('Repite el nuevo PIN para confirmar:', '');
+    if (confirmation !== clean) {
+      window.alert('Los PIN no coinciden.');
+      return;
+    }
+    try {
+      await onAdminPinChange(clean);
+      window.alert('PIN actualizado correctamente.');
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'No se pudo actualizar el PIN.');
+    }
   }
   function remove() {
     if (!draft || singleton) return;
@@ -285,7 +322,11 @@ export function DeepEditor({state,onChange}:{state:BusinessState;onChange:(mutat
         {primitive.map(([key,val])=><FieldEditor key={key} keyName={key} value={val} state={state} onChange={v=>setDraft((d:any)=>({...d,[key]:v}))}/>)}
       </div>
       <div className="deep-section"><h4>Relaciones, listas y detalles</h4><DeepObjectEditor value={Object.fromEntries(Object.entries(draft).filter(([,v])=>v!==null && typeof v==='object'))} state={state} onChange={v=>setDraft((d:any)=>({...d,...v}))}/></div>
-      <div className="button-row"><button className="primary" onClick={save}>Guardar y recalcular todo</button>{!singleton&&<><button className="secondary" onClick={duplicate}>Duplicar</button><button className="danger-button" onClick={remove}>Eliminar y reajustar</button></>}</div>
+      <div className="button-row">
+        <button className="primary" onClick={() => void save()}>Guardar y recalcular todo</button>
+        {collection === 'admin' && onAdminPinChange ? <button className="secondary" onClick={() => void changePin()}>Cambiar PIN</button> : null}
+        {!singleton&&<><button className="secondary" onClick={duplicate}>Duplicar</button><button className="danger-button" onClick={remove}>Eliminar y reajustar</button></>}
+      </div>
     </section>}
 
     {state.__calculations && <section className="panel">
