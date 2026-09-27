@@ -68,17 +68,26 @@ export interface RecipeLine {
   quantity: number;
 }
 
+export interface ServiceLine {
+  serviceId: string;
+  quantity: number;
+}
+
 export interface Recipe {
   id: string;
   productId: string;
   name: string;
   yieldUnits: number;
   ingredients: RecipeLine[];
+  serviceLines?: ServiceLine[];
   packagingCost: number;
   utilityCost: number;
   serviceCost: number;
   laborHours: number;
   laborRate: number;
+  useDefaultPackagingCost?: boolean;
+  useDefaultUtilityCost?: boolean;
+  useDefaultLaborRate?: boolean;
   otherCost: number;
   totalCost: number;
   salePrice: number;
@@ -189,6 +198,7 @@ export interface OrderItem {
 export interface Order {
   id: string;
   createdAt: string;
+  customerId?: string;
   deliveryAt?: string;
   customerName: string;
   customerPhone: string;
@@ -219,6 +229,8 @@ export interface MoneyMove {
   description: string;
   category: string;
   method?: PaymentMethod;
+  origin?: 'order' | 'debt';
+  relatedId?: string;
 }
 
 export interface Debt {
@@ -274,7 +286,7 @@ export interface LocalAdmin {
 }
 
 export interface BusinessAction {
-  collection: 'products' | 'ingredients' | 'recipes' | 'suppliers' | 'customers' | 'promotions' | 'combos' | 'loyaltyRewards' | 'services' | 'orders' | 'money' | 'debts' | 'losses' | 'notifications' | 'reviews';
+  collection: 'products' | 'ingredients' | 'recipes' | 'suppliers' | 'customers' | 'promotions' | 'combos' | 'loyaltyRewards' | 'services' | 'orders' | 'money' | 'debts' | 'losses' | 'notifications' | 'reviews' | 'settings' | 'cashRegister';
   action: 'add' | 'update' | 'delete';
   id?: string;
   value?: Record<string, unknown>;
@@ -331,6 +343,8 @@ export interface BusinessCalculations {
   targetProfitAmount: number;
   breakEvenRevenue: number;
   recommendedRevenue: number;
+  registerExpectedCash: number;
+  registerDifference: number;
   productPricing: ProductPricing[];
   totalRecommendedRevenue: number;
   formulas: Array<{ name: string; formula: string; value: number }>;
@@ -362,24 +376,48 @@ export function money(value: number): string {
   }).format(Number.isFinite(value) ? value : 0);
 }
 
-export function calculateRecipeCost(recipe: Recipe, ingredients: Ingredient[]): Recipe {
+export function calculateRecipeCost(
+  recipe: Recipe,
+  ingredients: Ingredient[],
+  services: ServiceCost[] = [],
+  settings?: BusinessSettings
+): Recipe {
+  const packagingCost = recipe.useDefaultPackagingCost === false
+    ? recipe.packagingCost
+    : Number(settings?.defaultPackagingCost ?? recipe.packagingCost ?? 0);
+  const utilityCost = recipe.useDefaultUtilityCost === false
+    ? recipe.utilityCost
+    : Number(settings?.defaultUtilityCost ?? recipe.utilityCost ?? 0);
+  const laborRate = recipe.useDefaultLaborRate === false
+    ? recipe.laborRate
+    : Number(settings?.laborRatePerHour ?? recipe.laborRate ?? 0);
+
   const ingredientCost = recipe.ingredients.reduce((sum, line) => {
     const ingredient = ingredients.find(i => i.id === line.ingredientId);
-    return sum + (ingredient ? ingredient.unitCost * line.quantity : 0);
+    return sum + (ingredient ? Number(ingredient.unitCost) * Number(line.quantity) : 0);
+  }, 0);
+
+  const linkedServiceCost = (recipe.serviceLines || []).reduce((sum, line) => {
+    const service = services.find(s => s.id === line.serviceId && s.active !== false);
+    return sum + (service ? Number(service.amount) * Number(line.quantity) : 0);
   }, 0);
 
   const productionCost = ingredientCost
-    + recipe.packagingCost
-    + recipe.utilityCost
-    + recipe.serviceCost
-    + (recipe.laborHours * recipe.laborRate)
-    + recipe.otherCost;
+    + packagingCost
+    + utilityCost
+    + Number(recipe.serviceCost || 0)
+    + linkedServiceCost
+    + (Number(recipe.laborHours || 0) * laborRate)
+    + Number(recipe.otherCost || 0);
 
   const totalCost = recipe.yieldUnits > 0 ? productionCost / recipe.yieldUnits : productionCost;
   const margin = recipe.salePrice > 0 ? ((recipe.salePrice - totalCost) / recipe.salePrice) * 100 : 0;
 
   return {
     ...recipe,
+    packagingCost,
+    utilityCost,
+    laborRate,
     totalCost: Number(totalCost.toFixed(4)),
     margin: Number(margin.toFixed(2))
   };
