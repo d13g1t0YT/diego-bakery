@@ -215,7 +215,9 @@ export function DeepEditor({state,onChange}:{state:BusinessState;onChange:(mutat
 
   const singleton = collection === 'settings' || collection === 'cashRegister' || collection === 'admin';
   const items:any[] = singleton
-    ? [{id:collection,...structuredClone((state as any)[collection] || (collection === 'admin' ? { name: '', phone: '' } : {}))}]
+    ? [collection === 'admin'
+      ? { id: 'admin', name: state.admin?.name || '', phone: state.admin?.phone || '' }
+      : { id: collection, ...structuredClone((state as any)[collection] || {}) }]
     : (((state as any)[collection]||[]) as any[]);
   const filtered = useMemo(()=>items.filter(x=>!search.trim() || JSON.stringify(x).toLowerCase().includes(search.toLowerCase())),[items,search]);
 
@@ -235,7 +237,16 @@ export function DeepEditor({state,onChange}:{state:BusinessState;onChange:(mutat
     const clean=structuredClone(draft);
     if (singleton) {
       delete clean.id;
-      onChange(current=>recalculateBusinessState({...current,[collection]:clean} as BusinessState,current));
+      if (collection === 'admin') {
+        delete clean.token;
+        delete clean.pinHash;
+        onChange(current => recalculateBusinessState({
+          ...current,
+          admin: { ...(current.admin || { name: '', phone: '', pinHash: '' }), ...clean }
+        } as BusinessState, current));
+      } else {
+        onChange(current=>recalculateBusinessState({...current,[collection]:clean} as BusinessState,current));
+      }
     }
     else onChange(current=>recalculateBusinessState({...current,[collection]:((current as any)[collection]||[]).map((x:any)=>x.id===selectedId?{...clean,id:selectedId}:x)} as BusinessState,current));
   }
