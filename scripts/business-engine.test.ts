@@ -1,4 +1,4 @@
-import { recalculateBusinessState, applyBusinessChange } from '../app/src/businessEngine';
+import { recalculateBusinessState, applyBusinessChange, resolvePromotion } from '../app/src/businessEngine';
 import {
   type BusinessState,
   type Ingredient,
@@ -183,6 +183,84 @@ assert(s0.__calculations?.expenses === 100, 'expense is included in finance tota
 assert((s0.__calculations?.accountsPayable ?? -1) === 0, 'no payable without debts');
 assert((s0.__calculations?.sales ?? -1) === 10, 'delivered order payment is represented exactly once in the ledger');
 assert((s0.__calculations?.cash ?? -1) === -90, 'cash uses only the actual cash payment movements');
+
+const secondProduct: Product = {
+  id: 'prd_b',
+  name: 'Brownie',
+  description: '',
+  category: 'Brownies',
+  categories: ['Brownies'],
+  price: 20,
+  cost: 5,
+  stock: 10,
+  active: true,
+  seasonal: false,
+  tags: [],
+  flavors: [],
+  sizes: [],
+  presentation: 'Caja'
+};
+
+const promoCart = [
+  { productId: 'prd_a', quantity: 1, subtotal: 10, unitPrice: 10 },
+  { productId: 'prd_b', quantity: 1, subtotal: 20, unitPrice: 20 }
+];
+const scopedPromotion = resolvePromotion(
+  promoCart,
+  [{ ...s0.promotions[0], productIds: ['prd_a'] }],
+  'promo_a',
+  undefined,
+  new Date('2026-09-10T12:00:00Z')
+);
+assert(scopedPromotion.discount === 1, 'promotion applies only to products inside its product scope');
+
+const futurePromotion = resolvePromotion(
+  [{ productId: 'prd_a', quantity: 1, subtotal: 10, unitPrice: 10 }],
+  [{ ...s0.promotions[0], startAt: '2026-10-01T00:00:00Z' }],
+  'promo_a',
+  undefined,
+  new Date('2026-09-10T12:00:00Z')
+);
+assert(futurePromotion.discount === 0, 'future promotion is not applied before its start date');
+
+const promoOrderState = applyBusinessChange(s0, {
+  collection: 'orders',
+  action: 'update',
+  id: 'ord_open',
+  value: { promotionId: 'promo_a', discountCode: undefined }
+});
+assert(promoOrderState.orders.find(o => o.id === 'ord_open')?.discount === 2, 'open order stores the current promotion discount');
+
+const promoChanged = applyBusinessChange(promoOrderState, {
+  collection: 'promotions',
+  action: 'update',
+  id: 'promo_a',
+  value: { value: 20 }
+});
+assert(promoChanged.orders.find(o => o.id === 'ord_open')?.discount === 4, 'promotion value changes propagate to open order discount');
+assert(promoChanged.orders.find(o => o.id === 'ord_open')?.total === 19, 'promotion value changes propagate to open order total');
+
+const promoDeleted = applyBusinessChange(promoChanged, {
+  collection: 'promotions',
+  action: 'delete',
+  id: 'promo_a'
+});
+assert(promoDeleted.orders.find(o => o.id === 'ord_open')?.discount === 0, 'deleting an applied promotion removes its open-order discount');
+assert(promoDeleted.orders.find(o => o.id === 'ord_open')?.total === 23, 'deleting an applied promotion recalculates the open-order total');
+
+const linkedCustomers = applyBusinessChange(s0, {
+  collection: 'orders',
+  action: 'update',
+  id: 'ord_open',
+  value: { customerId: 'cus_a', customerName: 'Ana', customerPhone: '1' }
+});
+const customerRemoved = applyBusinessChange(linkedCustomers, {
+  collection: 'customers',
+  action: 'delete',
+  id: 'cus_a'
+});
+assert(customerRemoved.orders.find(o => o.id === 'ord_open')?.customerId === undefined, 'deleting a customer clears the open-order customer relation');
+
 
 const changedIngredient = {
   ...s0,
