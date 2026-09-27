@@ -146,7 +146,7 @@ async function enhanceWithAI(parsed: ParsedRecipe, originalText: string): Promis
     });
 
     if (!response.ok) return parsed;
-    const payload = await response.json();
+    const payload: any = await response.json();
     const raw = typeof payload?.output_text === 'string'
       ? payload.output_text
       : Array.isArray(payload?.output)
