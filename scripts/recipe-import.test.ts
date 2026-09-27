@@ -56,4 +56,23 @@ assert(parsedTable.yieldUnits === 24, 'detects alternate yield wording');
 assert(parsedTable.ingredients.length >= 2, 'parses ingredient lines from alternate layout');
 assert(parsedTable.procedure.length >= 2, 'detects alternate procedure lines');
 
+
+const nameFirst = `
+Torta de chocolate
+Ingredientes
+Harina 250 g
+Azúcar 180 g
+Cocoa | 40 g
+Leche 200 ml
+
+Procedimiento
+Mezcla todo.
+Hornea 35 minutos.
+`;
+const parsedNameFirst = parseRecipeText(nameFirst, 'pdf');
+assert(parsedNameFirst.ingredients.length === 4, 'parses name-first and pipe-separated ingredient rows');
+assert(parsedNameFirst.ingredients.find(x => x.name.toLowerCase().includes('harina'))?.quantity === 250, 'parses name-first quantity');
+assert(parsedNameFirst.ingredients.find(x => x.name.toLowerCase().includes('cocoa'))?.unit === 'g', 'parses table separator and unit');
+assert(parsedNameFirst.procedure.length === 2, 'keeps short procedure without explicit numbering');
+
 console.log('PASS: recipe parser detects name, yield, ingredients, quantities, units, procedure and notes');
