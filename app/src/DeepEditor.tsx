@@ -122,7 +122,17 @@ function DeepObjectEditor({value,state,onChange,path='root'}:{
         <div className="deep-item-head"><b>{friendly(String(i+1))}</b><button className="danger-button small" onClick={()=>onChange(value.filter((_:any,j:number)=>j!==i))}>Eliminar</button></div>
         <DeepObjectEditor value={item} state={state} path={path+'.'+i} onChange={v=>{const next=[...value];next[i]=v;onChange(next)}}/>
       </div>)}
-      <button className="secondary small" onClick={()=>onChange([...value, typeof value[0]==='object' && value[0]!==null ? structuredClone(value[0]) : ''])}>＋ Agregar elemento</button>
+      <button className="secondary small" onClick={()=>{
+        const key=path.split('.').pop() || '';
+        let item:any='';
+        if(key==='ingredients') item={ingredientId:'',quantity:0};
+        else if(key==='addresses') item={label:'Nueva dirección',address:'',reference:''};
+        else if(key==='options') item={label:'Nueva opción',values:[]};
+        else if(key==='items') item={productId:'',productName:'',quantity:1,unitPrice:0,cost:0,subtotal:0};
+        else if(key==='schoolWindows') item={label:'Horario',start:'08:00',end:'09:00'};
+        else if(value[0] && typeof value[0]==='object') item=structuredClone(value[0]);
+        onChange([...value,item]);
+      }}>＋ Agregar elemento</button>
     </div>;
   }
   if (value && typeof value === 'object') {
