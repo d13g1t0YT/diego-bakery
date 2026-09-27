@@ -5,6 +5,7 @@ import { apiConfigured, askBusinessAi, getCloudState, getPublicOrders, login, pi
 import { calculateRecipeCost, type BusinessState, type Customer, type Debt, type Ingredient, type LocalAdmin, type MoneyMove, type MoneyMoveType, type NotificationItem, type Order, type OrderItem, type OrderStatus, type Product, type Recipe, defaultState, money, uid } from './types';
 import { CashRegisterView, CombosView, CustomersView, LoyaltyView, NotificationsView, PromotionsView, RecipesView, ServicesView, SuppliersView } from './BusinessFeatures';
 import { csvDownload, downloadBackup, loadState, restoreBackup, saveState } from './storage';
+import { applyBusinessChange, recalculateBusinessState, type ProductPricing } from './businessEngine';
 
 type Mode = 'admin' | 'cliente';
 type Section =
@@ -388,10 +389,11 @@ function AppInner() {
     if (!current) return;
     const changeAt = new Date().toISOString();
     const next = { ...mutator(current), lastLocalChangeAt: changeAt };
-    stateRef.current = next;
-    setState(next);
+    const calculated = recalculateBusinessState(next);
+    stateRef.current = calculated;
+    setState(calculated);
     setSyncState('saving');
-    if (next.admin?.token && online) scheduleCloudSync();
+    if (calculated.admin?.token && online) scheduleCloudSync();
   }
 
   function scheduleCloudSync() {
@@ -404,10 +406,11 @@ function AppInner() {
     const rawNext = typeof value === 'function' ? value(current) : value;
     const changeAt = new Date().toISOString();
     const next = rawNext ? { ...rawNext, lastLocalChangeAt: changeAt } : rawNext;
-    stateRef.current = next;
-    setState(next);
+    const calculated = next ? recalculateBusinessState(next) : next;
+    stateRef.current = calculated;
+    setState(calculated);
     setSyncState('saving');
-    if (next?.admin?.token && online) scheduleCloudSync();
+    if (calculated?.admin?.token && online) scheduleCloudSync();
   }
 
   async function flushCloudSync() {
@@ -483,12 +486,12 @@ function AppInner() {
       const known = new Set(remoteOrders.map(o => o.remoteId).filter(Boolean));
       remoteOrders.push(...mapped.filter(o => !known.has(o.remoteId || o.id)));
 
-      const next = {
+      const next = recalculateBusinessState({
         ...remoteState,
         orders: remoteOrders,
         admin: local.admin,
         lastSyncAt: new Date().toISOString()
-      };
+      });
       stateRef.current = next;
       setState(next);
       setSyncState('saved');
