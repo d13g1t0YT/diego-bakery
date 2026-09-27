@@ -134,7 +134,8 @@ export function RecipeImportPanel({
     const recipeLines: RecipeLine[] = ingredients
       .map((item, index) => ({
         ingredientId: ingredientIdByIndex.get(index) || item.matchedId || '',
-        quantity: Math.max(0, Number(item.quantity) || 0)
+        quantity: Math.max(0, Number(item.quantity) || 0),
+        unit: item.unit.trim() || 'und'
       }))
       .filter(line => line.ingredientId && line.quantity > 0);
 
@@ -227,11 +228,11 @@ export function RecipeImportPanel({
           <p className="eyebrow">IMPORTACIÓN INTELIGENTE</p>
           <h3>Importar receta desde archivo</h3>
         </div>
-        <span className="status">DOCX · PDF · TXT</span>
+        <span className="status">DOCX · PDF · TXT · PNG · JPG</span>
       </div>
 
       <p className="muted">
-        La aplicación extrae nombre, rendimiento, ingredientes, cantidades, procedimiento y notas.
+        La aplicación detecta nombre, rendimiento, orden de ingredientes, cantidades, unidades, procedimiento, notas, especificaciones y apariencia final cuando aparecen en el archivo.
         Después puedes revisar y editar todo antes de incorporarlo al negocio.
       </p>
 
@@ -240,7 +241,7 @@ export function RecipeImportPanel({
           Archivo
           <input
             type="file"
-            accept=".docx,.pdf,.txt,application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            accept=".docx,.pdf,.txt,.png,.jpg,.jpeg,application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg"
             onChange={event => setFile(event.target.files?.[0] || null)}
           />
         </label>
@@ -322,6 +323,27 @@ export function RecipeImportPanel({
               <button className="secondary small" onClick={addProcedureStep}>＋ Agregar paso</button>
             </div>
           </div>
+
+          {result.recipe.specifications ? (
+            <div className="deep-section">
+              <h4>Especificaciones detectadas</h4>
+              <div className="form-grid">
+                <label>Peso<input type="number" step="any" value={result.recipe.specifications.weight ?? 0} onChange={e => setResult(current => current ? ({...current, recipe: {...current.recipe, specifications: {...current.recipe.specifications!, weight: Number(e.target.value) || 0}}}) : current)} /></label>
+                <label>Unidad de peso<input value={result.recipe.specifications.weightUnit ?? 'g'} onChange={e => setResult(current => current ? ({...current, recipe: {...current.recipe, specifications: {...current.recipe.specifications!, weightUnit: e.target.value}}}) : current)} /></label>
+                <label>Altura<input type="number" step="any" value={result.recipe.specifications.height ?? 0} onChange={e => setResult(current => current ? ({...current, recipe: {...current.recipe, specifications: {...current.recipe.specifications!, height: Number(e.target.value) || 0}}}) : current)} /></label>
+                <label>Unidad altura<input value={result.recipe.specifications.heightUnit ?? 'cm'} onChange={e => setResult(current => current ? ({...current, recipe: {...current.recipe, specifications: {...current.recipe.specifications!, heightUnit: e.target.value}}}) : current)} /></label>
+                <label>Diámetro<input type="number" step="any" value={result.recipe.specifications.diameter ?? 0} onChange={e => setResult(current => current ? ({...current, recipe: {...current.recipe, specifications: {...current.recipe.specifications!, diameter: Number(e.target.value) || 0}}}) : current)} /></label>
+                <label>Unidad diámetro<input value={result.recipe.specifications.diameterUnit ?? 'cm'} onChange={e => setResult(current => current ? ({...current, recipe: {...current.recipe, specifications: {...current.recipe.specifications!, diameterUnit: e.target.value}}}) : current)} /></label>
+                <label>Forma<input value={result.recipe.specifications.shape ?? ''} onChange={e => setResult(current => current ? ({...current, recipe: {...current.recipe, specifications: {...current.recipe.specifications!, shape: e.target.value}}}) : current)} /></label>
+                <label>Tipo de molde<input value={result.recipe.specifications.moldType ?? ''} onChange={e => setResult(current => current ? ({...current, recipe: {...current.recipe, specifications: {...current.recipe.specifications!, moldType: e.target.value}}}) : current)} /></label>
+                <label>Tipo de empaque<input value={result.recipe.specifications.packagingType ?? ''} onChange={e => setResult(current => current ? ({...current, recipe: {...current.recipe, specifications: {...current.recipe.specifications!, packagingType: e.target.value}}}) : current)} /></label>
+                <label>Temperatura<input type="number" step="1" value={result.recipe.specifications.temperature ?? 0} onChange={e => setResult(current => current ? ({...current, recipe: {...current.recipe, specifications: {...current.recipe.specifications!, temperature: Number(e.target.value) || 0}}}) : current)} /></label>
+                <label>Unidad temperatura<input value={result.recipe.specifications.temperatureUnit ?? '°C'} onChange={e => setResult(current => current ? ({...current, recipe: {...current.recipe, specifications: {...current.recipe.specifications!, temperatureUnit: e.target.value}}}) : current)} /></label>
+                <label>Tiempo de horneado (min)<input type="number" step="1" value={result.recipe.specifications.bakingTimeMinutes ?? 0} onChange={e => setResult(current => current ? ({...current, recipe: {...current.recipe, specifications: {...current.recipe.specifications!, bakingTimeMinutes: Number(e.target.value) || 0}}}) : current)} /></label>
+                <label className="form-grid-full">Apariencia final<textarea value={result.recipe.specifications.finalAppearance ?? ''} onChange={e => setResult(current => current ? ({...current, recipe: {...current.recipe, specifications: {...current.recipe.specifications!, finalAppearance: e.target.value}}}) : current)} /></label>
+              </div>
+            </div>
+          ) : null}
 
           {notes.length ? (
             <div className="deep-section">
