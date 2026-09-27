@@ -18,6 +18,26 @@ export interface ProductOption {
   values: string[];
 }
 
+export interface PhysicalSpecifications {
+  weight?: number;
+  weightUnit?: string;
+  height?: number;
+  heightUnit?: string;
+  width?: number;
+  widthUnit?: string;
+  length?: number;
+  lengthUnit?: string;
+  diameter?: number;
+  diameterUnit?: string;
+  shape?: string;
+  moldType?: string;
+  packagingType?: string;
+  temperature?: number;
+  temperatureUnit?: string;
+  bakingTimeMinutes?: number;
+  finalAppearance?: string;
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -50,6 +70,7 @@ export interface Product {
   customizationNote?: string;
   image?: string;
   sku?: string;
+  specifications?: PhysicalSpecifications;
 }
 
 export interface Ingredient {
@@ -66,6 +87,7 @@ export interface Ingredient {
 export interface RecipeLine {
   ingredientId: string;
   quantity: number;
+  unit?: string;
 }
 
 export interface ServiceLine {
@@ -95,6 +117,7 @@ export interface Recipe {
   totalCost: number;
   salePrice: number;
   margin: number;
+  specifications?: PhysicalSpecifications;
 }
 
 export interface Supplier {
@@ -385,6 +408,71 @@ export function money(value: number): string {
   }).format(Number.isFinite(value) ? value : 0);
 }
 
+type UnitDefinition = { dimension: 'mass' | 'volume' | 'length' | 'count' | 'time'; factor: number };
+const UNIT_ALIASES: Record<string, string> = {
+  g: 'g', gr: 'g', gramo: 'g', gramos: 'g',
+  kg: 'kg', kilo: 'kg', kilos: 'kg', kilogramo: 'kg', kilogramos: 'kg',
+  mg: 'mg', miligramo: 'mg', miligramos: 'mg',
+  ml: 'ml', mililitro: 'ml', mililitros: 'ml',
+  l: 'l', lt: 'l', litro: 'l', litros: 'l',
+  cl: 'cl', centilitro: 'cl', centilitros: 'cl',
+  cc: 'ml',
+  cdta: 'tsp', cucharadita: 'tsp', cucharaditas: 'tsp',
+  cdita: 'tsp',
+  cda: 'tbsp', cucharada: 'tbsp', cucharadas: 'tbsp',
+  taza: 'cup', tazas: 'cup',
+  cup: 'cup', cups: 'cup',
+  unidad: 'und', unidades: 'und', und: 'und', u: 'und',
+  pieza: 'und', piezas: 'und',
+  docena: 'dz', docenas: 'dz',
+  mm: 'mm', milimetro: 'mm', milimetros: 'mm',
+  cm: 'cm', centimetro: 'cm', centimetros: 'cm',
+  m: 'm', metro: 'm', metros: 'm',
+  min: 'min', minuto: 'min', minutos: 'min',
+  h: 'h', hora: 'h', horas: 'h'
+};
+
+const UNIT_DEFINITIONS: Record<string, UnitDefinition> = {
+  mg: { dimension: 'mass', factor: 0.001 },
+  g: { dimension: 'mass', factor: 1 },
+  kg: { dimension: 'mass', factor: 1000 },
+  ml: { dimension: 'volume', factor: 1 },
+  cl: { dimension: 'volume', factor: 10 },
+  l: { dimension: 'volume', factor: 1000 },
+  tsp: { dimension: 'volume', factor: 5 },
+  tbsp: { dimension: 'volume', factor: 15 },
+  cup: { dimension: 'volume', factor: 240 },
+  mm: { dimension: 'length', factor: 1 },
+  cm: { dimension: 'length', factor: 10 },
+  m: { dimension: 'length', factor: 1000 },
+  und: { dimension: 'count', factor: 1 },
+  dz: { dimension: 'count', factor: 12 },
+  min: { dimension: 'time', factor: 1 },
+  h: { dimension: 'time', factor: 60 }
+};
+
+export function normalizeUnit(unit: string): string {
+  const raw = String(unit || '').trim().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  return UNIT_ALIASES[raw] || raw;
+}
+
+export function convertQuantity(quantity: number, fromUnit?: string, toUnit?: string): number | null {
+  const value = Number(quantity);
+  if (!Number.isFinite(value)) return 0;
+  const from = normalizeUnit(fromUnit || '');
+  const to = normalizeUnit(toUnit || '');
+  if (!from || !to || from === to) return value;
+  const fromDef = UNIT_DEFINITIONS[from];
+  const toDef = UNIT_DEFINITIONS[to];
+  if (!fromDef || !toDef || fromDef.dimension !== toDef.dimension) return null;
+  return value * fromDef.factor / toDef.factor;
+}
+
+export function unitOptions(): string[] {
+  return ['g', 'kg', 'mg', 'ml', 'l', 'tsp', 'tbsp', 'cup', 'und', 'dz', 'mm', 'cm', 'm', 'min', 'h'];
+}
+
 export function calculateRecipeCost(
   recipe: Recipe,
   ingredients: Ingredient[],
@@ -403,7 +491,10 @@ export function calculateRecipeCost(
 
   const ingredientCost = recipe.ingredients.reduce((sum, line) => {
     const ingredient = ingredients.find(i => i.id === line.ingredientId);
-    return sum + (ingredient ? Number(ingredient.unitCost) * Number(line.quantity) : 0);
+    if (!ingredient) return sum;
+    const converted = convertQuantity(Number(line.quantity), line.unit, ingredient.unit);
+    const quantityInIngredientUnit = converted == null ? Number(line.quantity) : converted;
+    return sum + Number(ingredient.unitCost) * quantityInIngredientUnit;
   }, 0);
 
   const linkedServiceCost = (recipe.serviceLines || []).reduce((sum, line) => {
@@ -459,7 +550,15 @@ export function defaultState(): BusinessState {
           { label: 'Tamaño', values: ['Porción', 'Entero'] }
         ],
         customizable: true,
-        customizationNote: 'Puedes solicitar texto o color de decoración.'
+        customizationNote: 'Puedes solicitar texto o color de decoración.',
+        specifications: {
+          weight: 0, weightUnit: 'g', height: 0, heightUnit: 'cm',
+          width: 0, widthUnit: 'cm', length: 0, lengthUnit: 'cm',
+          diameter: 0, diameterUnit: 'cm', shape: 'Por definir',
+          moldType: 'Por definir', packagingType: 'Por definir',
+          temperature: 180, temperatureUnit: '°C', bakingTimeMinutes: 0,
+          finalAppearance: ''
+        }
       },
       {
         id: alfajorId,
