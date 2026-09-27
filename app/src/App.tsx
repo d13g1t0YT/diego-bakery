@@ -1,7 +1,7 @@
 import { Component, type Dispatch, type ErrorInfo, type ReactNode, type SetStateAction, useEffect, useMemo, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { Preferences } from '@capacitor/preferences';
-import { apiConfigured, askBusinessAi, getCloudState, getPublicOrders, login, pingHealth, putCloudState, submitPublicOrder, updatePublicOrderStatus, uploadBackup } from './api';
+import { apiConfigured, askBusinessAi, getCloudState, getPublicOrders, login, pingHealth, putCloudState, submitPublicOrder, updateAdminProfile, updatePublicOrderStatus, uploadBackup } from './api';
 import { calculateRecipeCost, type BusinessState, type Customer, type Debt, type Ingredient, type LocalAdmin, type MoneyMove, type MoneyMoveType, type NotificationItem, type Order, type OrderItem, type OrderStatus, type Product, type Recipe, defaultState, money, uid } from './types';
 import { CashRegisterView, CombosView, CustomersView, LoyaltyView, NotificationsView, PromotionsView, RecipesView, ServicesView, SuppliersView } from './BusinessFeatures';
 import { csvDownload, downloadBackup, loadState, restoreBackup, saveState } from './storage';
@@ -594,6 +594,59 @@ function AppInner() {
   }
 
 
+  async function syncAdminProfile(profile: { name: string; phone: string }, newPin?: string) {
+    const current = stateRef.current;
+    if (!current) return;
+
+    const token = current.admin?.token;
+    let nextToken = token;
+    let serverUser: { nombre: string; apellido: string; telefono: string } | undefined;
+
+    if (token && online && apiConfigured()) {
+      const parts = profile.name.trim().split(/\s+/).filter(Boolean);
+      const nombre = parts.shift() || 'Administrador';
+      const apellido = parts.join(' ') || 'Diego Bakery';
+      const result = await updateAdminProfile(token, {
+        nombre,
+        apellido,
+        telefono: normalizePhone(profile.phone),
+        ...(newPin ? { nuevoPin: newPin } : {})
+      });
+      nextToken = result.token;
+      serverUser = result.usuario;
+      await writeSessionToken(result.token);
+    } else if (newPin) {
+      const pinHash = await hashPin(newPin);
+      updateState(currentState => ({
+        ...currentState,
+        admin: currentState.admin
+          ? { ...currentState.admin, pinHash }
+          : currentState.admin
+      }));
+      return;
+    }
+
+    updateState(currentState => {
+      if (!currentState.admin) return currentState;
+      return {
+        ...currentState,
+        admin: {
+          ...currentState.admin,
+          name: serverUser ? [serverUser.nombre, serverUser.apellido].filter(Boolean).join(' ') : profile.name.trim(),
+          phone: serverUser?.telefono || normalizePhone(profile.phone),
+          token: nextToken || currentState.admin.token
+        }
+      };
+    });
+
+    if (newPin && (!serverUser || !token || !online || !apiConfigured())) {
+      const pinHash = await hashPin(newPin);
+      updateState(currentState => currentState.admin
+        ? { ...currentState, admin: { ...currentState.admin, pinHash } }
+        : currentState);
+    }
+  }
+
   function addMoney(move: Omit<MoneyMove, 'id' | 'date'>) {
     updateState(current => ({
       ...current,
@@ -972,7 +1025,15 @@ function AppInner() {
         {section === 'perdidas' && <LossesView state={state} setState={commitState} />}
         {section === 'reportes' && <ReportsView state={state} derived={derived} />}
         {section === 'asistente' && <BusinessAiView state={state} derived={derived} token={state.admin?.token} onApplyState={commitState} />}
-        {section === 'editar' && <DeepEditor state={state} onChange={updateState} />}
+        {section === 'editar' && <DeepEditor
+          state={state}
+          onChange={updateState}
+          onAdminSave={profile => syncAdminProfile(profile)}
+          onAdminPinChange={pin => syncAdminProfile(
+            { name: state.admin?.name || 'Administrador', phone: state.admin?.phone || '' },
+            pin
+          )}
+        />}
         {section === 'ajustes' && <SettingsView state={state} update={patch => updateState(current => ({ ...current, settings: { ...current.settings, ...patch } }))} exportBackup={() => downloadBackup(state)} onRestore={async file => { const restored = await restoreBackup(file); stateRef.current = restored; commitState(restored); setMessage('Respaldo restaurado.'); }} healthCheck={async () => { try { await pingHealth(); setMessage('Servidor disponible.'); } catch { setMessage('No se pudo contactar al servidor.'); } }} />}
       </main>
     </div>
