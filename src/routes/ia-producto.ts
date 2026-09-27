@@ -27,6 +27,64 @@ function sanitizeState(state: any) {
   };
 }
 
+function calculateCostFromDraft(draft: any, state: any) {
+  if (!draft || !Array.isArray(draft.ingredients) || draft.ingredients.length === 0) return undefined;
+
+  const settings = state.settings || {};
+  const yieldUnits = Math.max(1, Number(draft.yieldUnits || 1));
+  let ingredientCost = 0;
+
+  for (const item of draft.ingredients) {
+    const quantity = Math.max(0, Number(item.quantity || 0));
+    const normalized = String(item.name || '').toLowerCase().trim();
+    const existing = state.ingredients.find((ingredient: any) =>
+      String(ingredient.name || '').toLowerCase().trim() === normalized
+    );
+    const unitCost = existing ? Number(existing.unitCost || 0) : Number(item.unitCost || 0);
+    ingredientCost += quantity * unitCost;
+  }
+
+  const packagingCost = Math.max(0, Number(draft.packagingCost || 0));
+  const utilityCost = Math.max(0, Number(draft.utilityCost || 0));
+  const serviceCost = Math.max(0, Number(draft.serviceCost || 0));
+  const laborHours = Math.max(0, Number(draft.laborHours || 0));
+  const laborRate = Math.max(0, Number(settings.laborRatePerHour || draft.laborRate || 0));
+  const otherCost = Math.max(0, Number(draft.otherCost || 0));
+
+  const directBatchCost = ingredientCost + packagingCost + utilityCost + serviceCost + laborHours * laborRate + otherCost;
+  const directUnitCost = directBatchCost / yieldUnits;
+
+  const monthlyUnits = Math.max(1, Number(settings.pricingExpectedMonthlyUnits || 1));
+  const expenses = Boolean(settings.pricingIncludeExpenses)
+    ? state.calculations?.expenses ? Number(state.calculations.expenses) : 0
+    : 0;
+  const investments = Number(state.calculations?.investments || 0);
+  const losses = Boolean(settings.pricingIncludeLosses)
+    ? Number(state.calculations?.losses || 0)
+    : 0;
+  const recoveryMonths = Math.max(1, Number(settings.pricingInvestmentRecoveryMonths || 1));
+  const allocatedExpenses = expenses / monthlyUnits;
+  const allocatedInvestment = investments / recoveryMonths / monthlyUnits;
+  const allocatedLosses = losses / monthlyUnits;
+  const fullUnitCost = directUnitCost + allocatedExpenses + allocatedInvestment + allocatedLosses;
+  const targetPercent = Math.max(0, Number(settings.pricingTargetProfitPercent || 0));
+  const targetProfit = fullUnitCost * targetPercent / 100;
+  const recommendedPrice = fullUnitCost + targetProfit;
+
+  return {
+    ingredientCost: Number(ingredientCost.toFixed(4)),
+    directBatchCost: Number(directBatchCost.toFixed(4)),
+    directUnitCost: Number(directUnitCost.toFixed(4)),
+    allocatedExpenses: Number(allocatedExpenses.toFixed(4)),
+    allocatedInvestment: Number(allocatedInvestment.toFixed(4)),
+    allocatedLosses: Number(allocatedLosses.toFixed(4)),
+    fullUnitCost: Number(fullUnitCost.toFixed(4)),
+    targetProfit: Number(targetProfit.toFixed(4)),
+    recommendedPrice: Number(recommendedPrice.toFixed(4)),
+    yieldUnits
+  };
+}
+
 router.post('/nuevo-producto', autenticar, async (req: AuthRequest, res: Response) => {
   if (!OPENAI_API_KEY) {
     res.status(503).json({ error: 'La IA no está configurada en el servidor.' });
@@ -116,6 +174,13 @@ router.post('/nuevo-producto', autenticar, async (req: AuthRequest, res: Respons
                     description: { type: ['string', 'null'] },
                     category: { type: ['string', 'null'] },
                     presentation: { type: ['string', 'null'] },
+                    yieldUnits: { type: ['number', 'null'] },
+                    packagingCost: { type: ['number', 'null'] },
+                    utilityCost: { type: ['number', 'null'] },
+                    serviceCost: { type: ['number', 'null'] },
+                    laborHours: { type: ['number', 'null'] },
+                    laborRate: { type: ['number', 'null'] },
+                    otherCost: { type: ['number', 'null'] },
                     ingredients: {
                       type: ['array', 'null'],
                       items: {
@@ -138,7 +203,7 @@ router.post('/nuevo-producto', autenticar, async (req: AuthRequest, res: Respons
                     pricePerBatch: { type: ['number', 'null'] },
                     targetMarginPercent: { type: ['number', 'null'] }
                   },
-                  required: ['name', 'description', 'category', 'presentation', 'ingredients', 'procedure', 'pricePerUnit', 'pricePerBatch', 'targetMarginPercent']
+                  required: ['name', 'description', 'category', 'presentation', 'yieldUnits', 'packagingCost', 'utilityCost', 'serviceCost', 'laborHours', 'laborRate', 'otherCost', 'ingredients', 'procedure', 'pricePerUnit', 'pricePerBatch', 'targetMarginPercent']
                 }
               },
               required: ['message', 'question', 'field', 'ready', 'estimate', 'productDraft']
@@ -170,13 +235,40 @@ router.post('/nuevo-producto', autenticar, async (req: AuthRequest, res: Respons
     }
 
     const parsed = JSON.parse(raw);
+    const productDraft = parsed.productDraft || undefined;
+    const deterministic = calculateCostFromDraft(productDraft, state);
+
     res.json({
       message: String(parsed.message || ''),
       question: parsed.question == null ? undefined : String(parsed.question),
       field: parsed.field == null ? undefined : String(parsed.field),
       ready: Boolean(parsed.ready),
-      estimate: parsed.estimate || undefined,
-      productDraft: parsed.productDraft || undefined
+      estimate: deterministic
+        ? {
+            yieldUnits: deterministic.yieldUnits,
+            unitCost: deterministic.fullUnitCost,
+            totalBatchCost: deterministic.directBatchCost,
+            suggestedPrice: deterministic.recommendedPrice,
+            confidence: 1
+          }
+        : parsed.estimate || undefined,
+      productDraft: productDraft
+        ? {
+            ...productDraft,
+            yieldUnits: productDraft.yieldUnits ?? deterministic?.yieldUnits ?? undefined,
+            packagingCost: productDraft.packagingCost ?? 0,
+            utilityCost: productDraft.utilityCost ?? 0,
+            serviceCost: productDraft.serviceCost ?? 0,
+            laborHours: productDraft.laborHours ?? 0,
+            laborRate: productDraft.laborRate ?? undefined,
+            otherCost: productDraft.otherCost ?? 0,
+            ...(deterministic ? {
+              pricePerUnit: deterministic.recommendedPrice,
+              pricePerBatch: deterministic.recommendedPrice * deterministic.yieldUnits,
+              targetMarginPercent: Number(state.settings?.pricingTargetProfitPercent || 0)
+            } : {})
+          }
+        : undefined
     });
   } catch (error) {
     console.error('Error en asesor de nuevo producto:', error);
