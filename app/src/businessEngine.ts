@@ -130,12 +130,6 @@ function cleanReferences(input: BusinessState): BusinessState {
   return { ...input, recipes, ingredients, promotions, combos, reviews, customers };
 }
 
-function comboCost(comboId: string, products: Product[]): number {
-  const combo = products.length ? undefined : undefined;
-  void combo;
-  return 0;
-}
-
 function orderItemFromProduct(item: any, state: BusinessState): any | null {
   if (String(item.productId || '').startsWith('combo_')) {
     const comboId = String(item.productId).slice(6);
