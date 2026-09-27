@@ -76,7 +76,8 @@ export function NewProductAdvisor({
       }
       return {
         ingredientId: ingredient.id,
-        quantity: Math.max(0, Number(item.quantity) || 0)
+        quantity: Math.max(0, Number(item.quantity) || 0),
+        unit: item.unit.trim() || ingredient.unit
       };
     }).filter(item => item.quantity > 0);
 
@@ -97,7 +98,15 @@ export function NewProductAdvisor({
         flavors: [],
         sizes: [],
         presentation: draft.presentation?.trim() || 'Por definir',
-        customizable: false
+        customizable: false,
+        specifications: {
+          weight: 0, weightUnit: 'g', height: 0, heightUnit: 'cm',
+          width: 0, widthUnit: 'cm', length: 0, lengthUnit: 'cm',
+          diameter: 0, diameterUnit: 'cm', shape: '',
+          moldType: '', packagingType: draft.presentation?.trim() || '',
+          temperature: 0, temperatureUnit: '°C', bakingTimeMinutes: 0,
+          finalAppearance: ''
+        }
       };
 
       const recipe = calculateRecipeCost({
