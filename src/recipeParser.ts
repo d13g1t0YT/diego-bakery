@@ -81,14 +81,11 @@ function parseIngredientLine(line: string): ParsedIngredient | null {
     .replace(/^\d+[.)]\s*/, '')
     .trim();
 
-  // Common forms:
-  // 250 g harina
-  // Harina: 250 g
-  // 1 taza de azúcar
-  // 3 huevos
-  const normalizedRow = clean.replace(/[|\\t]+/g, ' ').replace(/\\s{2,}/g, ' ');
-  const quantityPattern = '[\\d.,]+(?:\\s+[\\d.,]+\\s*\\/\\s*[\\d.,]+|\\s*\\/\\s*[\\d.,]+)?';
-  const a = normalizedRow.match(new RegExp('^(' + quantityPattern + ')\\\\s*([A-Za-zÁÉÍÓÚÜÑñ]+)?\\\\s+(?:de\\\\s+)?(.+)
+  const normalizedRow = clean.replace(/[|\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+  const numberSource = '[\\d.,]+(?:\\s+[\\d.,]+\\s*\\/\\s*[\\d.,]+|\\s*\\/\\s*[\\d.,]+)?';
+  const a = normalizedRow.match(new RegExp('^(' + numberSource + ')\\s*([A-Za-zÁÉÍÓÚÜÑñ]+)?\\s+(?:de\\s+)?(.+)$', 'i'));
+  const b = normalizedRow.match(new RegExp('^(.+?)\\s*[:=]\\s*(' + numberSource + ')\\s*([A-Za-zÁÉÍÓÚÜÑñ]+)?$', 'i'));
+  const c = normalizedRow.match(new RegExp('^(.+?)\\s+(' + numberSource + ')\\s*([A-Za-zÁÉÍÓÚÜÑñ]+)$', 'i'));
 
   let quantity = 0;
   let unit = 'und';
@@ -113,7 +110,6 @@ function parseIngredientLine(line: string): ParsedIngredient | null {
   if (!name || quantity <= 0) return null;
   return { name, quantity, unit, raw: clean, confidence: b ? 0.92 : 0.86 };
 }
-
 function looksLikeIngredient(line: string): boolean {
   if (!line || line.length > 160) return false;
   if (/^(ingredientes?|procedimiento|preparación|preparacion|elaboración|elaboracion|pasos?|instrucciones?|notas?|observaciones?|modo de uso|decoración|decoracion|rendimiento|porciones?)\b/i.test(line)) return false;
