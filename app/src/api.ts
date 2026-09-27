@@ -112,6 +112,7 @@ export async function submitPublicOrder(order: {
   items: Order['items'];
   subtotal: number;
   discount: number;
+  deliveryFee?: number;
   total: number;
 }): Promise<{ id: string }> {
   return request<{ id: string }>('/api/pedidos-publicos', {
@@ -125,6 +126,7 @@ export async function submitPublicOrder(order: {
       items: order.items,
       subtotal: order.subtotal,
       descuento: order.discount,
+      delivery_fee: order.deliveryFee || 0,
       total: order.total
     })
   });
