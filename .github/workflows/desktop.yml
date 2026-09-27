@@ -36,6 +36,7 @@ jobs:
           npm run build
 
       - name: Verify native desktop loader
+        working-directory: desktop
         shell: pwsh
         run: |
           if ((Get-Content main.cjs -Raw) -match 'loadURL') { throw 'Desktop must not load the remote web app.' }
