@@ -5,7 +5,7 @@ import { apiConfigured, askBusinessAi, getCloudState, getPublicOrders, login, pi
 import { calculateRecipeCost, type BusinessState, type Customer, type Debt, type Ingredient, type LocalAdmin, type MoneyMove, type MoneyMoveType, type NotificationItem, type Order, type OrderItem, type OrderStatus, type Product, type Recipe, defaultState, money, uid } from './types';
 import { CashRegisterView, CombosView, CustomersView, LoyaltyView, NotificationsView, PromotionsView, RecipesView, ServicesView, SuppliersView } from './BusinessFeatures';
 import { csvDownload, downloadBackup, loadState, restoreBackup, saveState } from './storage';
-import { applyBusinessChange, recalculateBusinessState } from './businessEngine';
+import { applyBusinessChange, recalculateBusinessState, resolvePromotion } from './businessEngine';
 import { DeepEditor } from './DeepEditor';
 
 type Mode = 'admin' | 'cliente';
@@ -422,7 +422,11 @@ function AppInner() {
     try {
       await putCloudState(token, snapshot);
       if (snapshot.settings.autoBackup) await uploadBackup(token, snapshot);
-      setState(prev => prev ? { ...prev, lastSyncAt: new Date().toISOString() } : prev);
+      const syncedAt = new Date().toISOString();
+      stateRef.current = stateRef.current
+        ? { ...stateRef.current, lastSyncAt: syncedAt }
+        : stateRef.current;
+      setState(prev => prev ? { ...prev, lastSyncAt: syncedAt } : prev);
       setSyncState('saved');
       setMessage('Todo guardado y sincronizado.');
     } catch (error) {
@@ -576,7 +580,7 @@ function AppInner() {
     void (async () => {
       const phone = normalizePhone(setupPhone);
       const pin = setupPin.replace(/\D/g, '');
-      if (!setupName.trim() || phone.length < 6 || pin.length < 4) {
+      if (!setupName.trim() || phone.length < 6 || pin.length < 4 || pin.length > 12) {
         setMessage('Completa nombre, teléfono y un PIN de 4 a 12 dígitos.');
         return;
       }
@@ -803,19 +807,9 @@ function AppInner() {
       return;
     }
     const subtotal = cart.reduce((sum, item) => sum + number(item.subtotal), 0);
-    const quantity = cart.reduce((sum, item) => sum + number(item.quantity), 0);
-    const now = new Date();
-    const promo = state.promotions.find(p =>
-      p.active &&
-      (!p.code || p.code.toUpperCase() === promoCode.trim().toUpperCase()) &&
-      (!p.startAt || new Date(p.startAt) <= now) &&
-      (!p.endAt || new Date(p.endAt) >= now)
-    );
-    let discount = 0;
-    if (promo?.type === 'percent') discount = subtotal * Math.min(100, number(promo.value)) / 100;
-    if (promo?.type === 'fixed') discount = Math.min(subtotal, Math.max(0, number(promo.value)));
-    if (promo?.type === 'quantity' && quantity >= Math.max(1, number(promo.minQuantity, 1))) discount = Math.min(subtotal, Math.max(0, number(promo.value)));
-    if (promo?.type === 'date_price') discount = Math.max(0, subtotal - Math.max(0, number(promo.value)));
+    const promotionResult = resolvePromotion(cart, state.promotions, undefined, promoCode, new Date());
+    const promo = promotionResult.promotion;
+    const discount = promotionResult.discount;
 
     const deliveryFee = state.settings.deliveryEnabled && customerDraft.address.trim()
       ? Math.max(0, number(state.settings.deliveryFee))
@@ -837,6 +831,7 @@ function AppInner() {
       status: 'pendiente',
       paid: 0,
       discountCode: promo?.code,
+      promotionId: promo?.id,
       customerId: state.customers.find(c => c.phone === phone)?.id,
       source: 'cliente'
     };
@@ -1455,13 +1450,8 @@ function CustomerView({ products, cart, addToCart, changeCartQuantity, customer,
     (!catalogQuery.trim() || (p.name + ' ' + p.description + ' ' + p.category).toLowerCase().includes(catalogQuery.toLowerCase()))
   );
   const subtotal = cart.reduce((s: number, i: OrderItem) => s + number(i.subtotal), 0);
-  const quantity = cart.reduce((s: number, i: OrderItem) => s + number(i.quantity), 0);
-  const promo = promotions.find((p: any) => p.active && p.code && p.code.toUpperCase() === promoCode.trim().toUpperCase());
-  let discount = 0;
-  if (promo?.type === 'percent') discount = subtotal * Math.min(100, number(promo.value)) / 100;
-  if (promo?.type === 'fixed') discount = Math.min(subtotal, number(promo.value));
-  if (promo?.type === 'quantity' && quantity >= number(promo.minQuantity, 1)) discount = Math.min(subtotal, number(promo.value));
-  if (promo?.type === 'date_price') discount = Math.max(0, subtotal - number(promo.value));
+  const promotionResult = resolvePromotion(cart, promotions, undefined, promoCode, new Date());
+  const discount = promotionResult.discount;
   const deliveryFee = settings.deliveryEnabled && customer.address.trim() ? number(settings.deliveryFee) : 0;
   const total = Math.max(0, subtotal - discount + deliveryFee);
   return <div className={'customer-shell ' + theme}>
