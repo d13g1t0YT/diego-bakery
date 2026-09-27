@@ -110,6 +110,55 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
+
+async function verifyOpenAIConnection(): Promise<void> {
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
+  const model = process.env.OPENAI_MODEL || 'gpt-5.6-sol';
+
+  if (!apiKey) {
+    console.error('✗ OpenAI IA: OPENAI_API_KEY no está configurada');
+    return;
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+
+  try {
+    const response = await fetch('https://api.openai.com/v1/responses', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer ' + apiKey,
+        'Content-Type': 'application/json'
+      },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model,
+        store: false,
+        max_output_tokens: 8,
+        input: [{ role: 'user', content: [{ type: 'input_text', text: 'Responde únicamente: OK' }] }]
+      })
+    });
+
+    const payload = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      const code = payload?.error?.code ? String(payload.error.code) : 'unknown_error';
+      console.error('✗ OpenAI IA: conexión rechazada', response.status, code);
+      return;
+    }
+
+    console.log('✓ OpenAI IA: conexión comprobada correctamente con modelo ' + model);
+  } catch (error: any) {
+    console.error(
+      error?.name === 'AbortError'
+        ? '✗ OpenAI IA: prueba agotó el tiempo'
+        : '✗ OpenAI IA: error de conexión'
+    );
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function start(): Promise<void> {
   try {
     await initializeDatabase();
@@ -121,6 +170,7 @@ async function start(): Promise<void> {
       if (process.env.NODE_ENV === 'production') {
         console.log('✓ Diego Bakery App publicada en /app/');
       }
+      void verifyOpenAIConnection();
     });
 
     const shutdown = async (signal: string) => {
