@@ -76,3 +76,12 @@ assert(parsedNameFirst.ingredients.find(x => x.name.toLowerCase().includes('coco
 assert(parsedNameFirst.procedure.length === 2, 'keeps short procedure without explicit numbering');
 
 console.log('PASS: recipe parser detects name, yield, ingredients, quantities, units, procedure and notes');
+
+
+const imageContract = parseRecipeText('', 'png');
+assert(imageContract.sourceFormat === 'png', 'accepts PNG recipe source');
+assert(imageContract.ingredients.length === 0, 'keeps image parsing open for the vision service');
+const jpegContract = parseRecipeText('', 'jpeg');
+assert(jpegContract.sourceFormat === 'jpeg', 'accepts JPEG recipe source');
+
+console.log('PASS: recipe parser accepts PNG/JPEG sources for visual AI import');
