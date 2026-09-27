@@ -241,6 +241,7 @@ export interface Debt {
   dueDate?: string;
   description: string;
   paid: boolean;
+  paymentMethod?: PaymentMethod;
 }
 
 export interface Loss {
