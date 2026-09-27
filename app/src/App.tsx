@@ -2,7 +2,7 @@ import { Component, type Dispatch, type ErrorInfo, type ReactNode, type SetState
 import { Capacitor } from '@capacitor/core';
 import { Preferences } from '@capacitor/preferences';
 import { apiConfigured, askBusinessAi, getCloudState, getPublicOrders, login, pingHealth, putCloudState, submitPublicOrder, updateAdminProfile, updatePublicOrderStatus, uploadBackup } from './api';
-import { calculateRecipeCost, type BusinessState, type Customer, type Debt, type Ingredient, type LocalAdmin, type MoneyMove, type MoneyMoveType, type NotificationItem, type Order, type OrderItem, type OrderStatus, type Product, type Recipe, defaultState, money, uid } from './types';
+import { calculateRecipeCost, convertQuantity, type BusinessState, type Customer, type Debt, type Ingredient, type LocalAdmin, type MoneyMove, type MoneyMoveType, type NotificationItem, type Order, type OrderItem, type OrderStatus, type Product, type Recipe, defaultState, money, uid } from './types';
 import { CashRegisterView, CombosView, CustomersView, LoyaltyView, NotificationsView, PromotionsView, RecipesView, ServicesView, SuppliersView } from './BusinessFeatures';
 import { csvDownload, downloadBackup, loadState, restoreBackup, saveState } from './storage';
 import { applyBusinessChange, recalculateBusinessState, resolvePromotion } from './businessEngine';
@@ -716,7 +716,8 @@ function AppInner() {
           if (!recipe) continue;
           for (const line of recipe.ingredients) {
             const ingredient = stateRef.current?.ingredients.find(i => i.id === line.ingredientId);
-            const required = (line.quantity / Math.max(1, recipe.yieldUnits)) * entry.quantity;
+            const converted = ingredient ? convertQuantity(line.quantity, line.unit, ingredient.unit) : line.quantity;
+            const required = ((converted == null ? line.quantity : converted) / Math.max(1, recipe.yieldUnits)) * entry.quantity;
             if (ingredient && ingredient.stock + 0.000001 < required) {
               shortages.push(ingredient.name + ': faltan ' + (required - ingredient.stock).toFixed(2) + ' ' + ingredient.unit);
             }
