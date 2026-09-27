@@ -27,6 +27,17 @@ export interface Product {
   price: number;
   oldPrice?: number;
   cost: number;
+  manualCost?: number;
+  recommendedPrice?: number;
+  priceBreakdown?: {
+    ingredientCost: number;
+    productionCost: number;
+    allocatedExpenses: number;
+    allocatedInvestment: number;
+    allocatedLosses: number;
+    targetProfit: number;
+    recommendedPrice: number;
+  };
   stock: number;
   active: boolean;
   seasonal: boolean;
@@ -248,6 +259,11 @@ export interface BusinessSettings {
   socialInstagram?: string;
   socialFacebook?: string;
   notificationEnabled: boolean;
+  pricingTargetProfitPercent: number;
+  pricingExpectedMonthlyUnits: number;
+  pricingInvestmentRecoveryMonths: number;
+  pricingIncludeExpenses: boolean;
+  pricingIncludeLosses: boolean;
 }
 
 export interface LocalAdmin {
@@ -328,6 +344,7 @@ export function defaultState(): BusinessState {
         categories: ['Queques', 'Más vendidos'],
         price: 12,
         cost: 5,
+        manualCost: 5,
         stock: 0,
         active: true,
         seasonal: false,
@@ -350,6 +367,7 @@ export function defaultState(): BusinessState {
         categories: ['Alfajores', 'Más vendidos'],
         price: 4,
         cost: 1.5,
+        manualCost: 1.5,
         stock: 0,
         active: true,
         seasonal: false,
@@ -397,7 +415,12 @@ export function defaultState(): BusinessState {
       defaultPackagingCost: 0.5,
       deliveryFee: 0,
       loyaltyPointsPerSol: 1,
-      notificationEnabled: true
+      notificationEnabled: true,
+      pricingTargetProfitPercent: 30,
+      pricingExpectedMonthlyUnits: 100,
+      pricingInvestmentRecoveryMonths: 12,
+      pricingIncludeExpenses: true,
+      pricingIncludeLosses: true
     }
   };
 }
