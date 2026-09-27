@@ -145,7 +145,7 @@ export async function getPublicOrders(token: string): Promise<any[]> {
 
 export interface RecipeImportResponse {
   filename: string;
-  format: 'txt' | 'docx' | 'pdf';
+  format: 'txt' | 'docx' | 'pdf' | 'png' | 'jpg' | 'jpeg';
   extractedCharacters: number;
   recipe: {
     name: string;
@@ -159,7 +159,26 @@ export interface RecipeImportResponse {
     }>;
     procedure: string[];
     notes: string[];
-    sourceFormat: 'txt' | 'docx' | 'pdf';
+    specifications?: {
+      weight?: number;
+      weightUnit?: string;
+      height?: number;
+      heightUnit?: string;
+      width?: number;
+      widthUnit?: string;
+      length?: number;
+      lengthUnit?: string;
+      diameter?: number;
+      diameterUnit?: string;
+      shape?: string;
+      moldType?: string;
+      packagingType?: string;
+      temperature?: number;
+      temperatureUnit?: string;
+      bakingTimeMinutes?: number;
+      finalAppearance?: string;
+    };
+    sourceFormat: 'txt' | 'docx' | 'pdf' | 'png' | 'jpg' | 'jpeg';
     warnings: string[];
     confidence: number;
   };
