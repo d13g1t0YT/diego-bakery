@@ -39,7 +39,7 @@ export function RecipeImportPanel({
 
   async function analyze() {
     if (!file) {
-      setMessage('Selecciona un archivo .docx, .pdf o .txt.');
+      setMessage('Selecciona un archivo .docx, .pdf, .txt, .png, .jpg o .jpeg.');
       return;
     }
     const token = state.admin?.token;
@@ -255,7 +255,7 @@ export function RecipeImportPanel({
 
       <div className="button-row">
         <button className="primary" onClick={() => void analyze()} disabled={loading || !file}>
-          {loading ? 'Analizando…' : 'Analizar receta automáticamente'}
+          {loading ? 'Analizando texto/imagen…' : 'Analizar receta automáticamente'}
         </button>
       </div>
 
