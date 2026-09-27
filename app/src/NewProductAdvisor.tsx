@@ -190,12 +190,27 @@ export function NewProductAdvisor({
       ) : null}
 
       {response?.estimate ? (
-        <div className="metric-grid">
-          <div className="metric-card"><span>Costo por unidad</span><b>{Number(response.estimate.unitCost || 0).toFixed(2)}</b></div>
-          <div className="metric-card"><span>Costo del lote</span><b>{Number(response.estimate.totalBatchCost || 0).toFixed(2)}</b></div>
-          <div className="metric-card"><span>Precio sugerido</span><b>{Number(response.estimate.suggestedPrice || 0).toFixed(2)}</b></div>
-          <div className="metric-card"><span>Confianza</span><b>{Math.round(Number(response.estimate.confidence || 0) * 100)}%</b></div>
-        </div>
+        <>
+          <div className="metric-grid">
+            <div className="metric-card"><span>Costo completo por unidad</span><b>{Number(response.estimate.unitCost || 0).toFixed(2)}</b></div>
+            <div className="metric-card"><span>Costo del lote</span><b>{Number(response.estimate.totalBatchCost || 0).toFixed(2)}</b></div>
+            <div className="metric-card"><span>Precio recomendado</span><b>{Number(response.estimate.suggestedPrice || 0).toFixed(2)}</b></div>
+            <div className="metric-card"><span>Confianza</span><b>{Math.round(Number(response.estimate.confidence || 0) * 100)}%</b></div>
+          </div>
+          {response.estimate.scenarios?.length ? (
+            <div className="deep-section">
+              <h4>Escenarios de venta</h4>
+              <div className="metric-grid">
+                {response.estimate.scenarios.map((scenario, index) => (
+                  <div className="metric-card" key={index}>
+                    <span>{scenario.label}</span>
+                    <b>{Number(scenario.price || 0).toFixed(2)}</b>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </>
       ) : null}
 
       {readyDraft ? (
