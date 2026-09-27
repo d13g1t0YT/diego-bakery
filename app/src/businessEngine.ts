@@ -174,7 +174,7 @@ export function resolvePromotion(
   } else if (candidate.type === 'fixed' || candidate.type === 'combo') {
     discount = Math.min(subtotal, Math.max(0, n(candidate.value)));
   } else if (candidate.type === 'quantity') {
-    if (quantity >= Math.max(1, n(candidate.minQuantity, 1))) {
+    if (quantity >= Math.max(1, n(candidate.minQuantity ?? 1))) {
       discount = Math.min(subtotal, Math.max(0, n(candidate.value)));
     }
   } else if (candidate.type === 'date_price') {
