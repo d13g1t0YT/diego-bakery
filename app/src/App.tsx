@@ -1006,7 +1006,7 @@ function AppInner() {
         {section === 'recetas' && <RecipesView state={state} setState={commitState} />}
         {section === 'proveedores' && <SuppliersView suppliers={state.suppliers} setSuppliers={items => updateState(current => ({ ...current, suppliers: items }))} />}
         {section === 'clientes' && <CustomersView customers={state.customers} setCustomers={items => updateState(current => ({ ...current, customers: items }))} />}
-        {section === 'finanzas' && <FinanceView state={state} addMoney={addMoney} balance={derived.cash} />}
+        {section === 'finanzas' && <FinanceView state={state} addMoney={addMoney} balance={derived.cash} updateSettings={patch => updateState(current => ({ ...current, settings: { ...current.settings, ...patch } }))} />}
         {section === 'caja' && <CashRegisterView register={state.cashRegister} setRegister={register => updateState(current => ({ ...current, cashRegister: register }))} moneyMoves={state.money} />}
         {section === 'promociones' && <PromotionsView promotions={state.promotions} products={state.products} setPromotions={items => updateState(current => ({ ...current, promotions: items }))} />}
         {section === 'combinaciones' && <CombosView combos={state.combos} products={state.products} setCombos={items => updateState(current => ({ ...current, combos: items }))} />}
@@ -1249,7 +1249,7 @@ function IngredientsView({ ingredients, onAdd, onStock, query }: { ingredients: 
   </div>;
 }
 
-function FinanceView({ state, addMoney, balance }: { state: BusinessState; addMoney: (m: Omit<MoneyMove, 'id' | 'date'>) => void; balance: number }) {
+function FinanceView({ state, addMoney, balance, updateSettings }: { state: BusinessState; addMoney: (m: Omit<MoneyMove, 'id' | 'date'>) => void; balance: number; updateSettings: (patch: Partial<BusinessState['settings']>) => void }) {
   const [type, setType] = useState<MoneyMoveType>('gasto');
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
@@ -1319,9 +1319,9 @@ function FinanceView({ state, addMoney, balance }: { state: BusinessState; addMo
       <div className="form-grid">
         <label>Ganancia objetivo (%)<input type="number" min="0" step="0.1" value={state.settings.pricingTargetProfitPercent} onChange={e => {
           const value = Math.max(0, number(e.target.value));
-          window.dispatchEvent(new CustomEvent('diego-bakery-pricing', { detail: { pricingTargetProfitPercent: value } }));
+          updateSettings({ pricingTargetProfitPercent: value });
         }} /></label>
-        <label>Unidades estimadas al mes<input type="number" min="1" step="1" value={state.settings.pricingExpectedMonthlyUnits} onChange={e => window.dispatchEvent(new CustomEvent('diego-bakery-pricing', { detail: { pricingExpectedMonthlyUnits: Math.max(1, number(e.target.value)) } }))} /></label>
+        <label>Unidades estimadas al mes<input type="number" min="1" step="1" value={state.settings.pricingExpectedMonthlyUnits} onChange={e => updateSettings({ pricingExpectedMonthlyUnits: Math.max(1, number(e.target.value)) })} /></label>
         <label>Recuperar inversiones en (meses)<input type="number" min="1" step="1" value={state.settings.pricingInvestmentRecoveryMonths} onChange={e => window.dispatchEvent(new CustomEvent('diego-bakery-pricing', { detail: { pricingInvestmentRecoveryMonths: Math.max(1, number(e.target.value)) } }))} /></label>
       </div>
     </section>
