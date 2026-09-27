@@ -186,6 +186,7 @@ export interface NewProductAiResponse {
     totalBatchCost?: number;
     suggestedPrice?: number;
     confidence?: number;
+    scenarios?: Array<{ label: string; quantity: number; price: number }>;
   };
   productDraft?: {
     name?: string;
