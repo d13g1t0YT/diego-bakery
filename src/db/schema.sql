@@ -229,5 +229,8 @@ CREATE TABLE IF NOT EXISTS pedidos_publicos (
   actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+ALTER TABLE pedidos_publicos
+  ADD COLUMN IF NOT EXISTS delivery_fee DECIMAL(10,2) NOT NULL DEFAULT 0 CHECK (delivery_fee >= 0);
+
 CREATE INDEX IF NOT EXISTS idx_pedidos_publicos_estado
   ON pedidos_publicos(estado);
