@@ -1553,28 +1553,33 @@ function BusinessAiView({ state, derived, token, onApplyState }: { state: Busine
 }
 const EDITABLE_COLLECTIONS = [
   { key: 'products', label: 'Productos' },
-  { key: 'ingredients', label: 'Inventario' },
+  { key: 'ingredients', label: 'Inventario / ingredientes' },
   { key: 'recipes', label: 'Recetas' },
   { key: 'suppliers', label: 'Proveedores' },
   { key: 'customers', label: 'Clientes' },
   { key: 'promotions', label: 'Promociones' },
   { key: 'combos', label: 'Combos' },
   { key: 'loyaltyRewards', label: 'Premios de lealtad' },
-  { key: 'services', label: 'Servicios' },
+  { key: 'services', label: 'Servicios y costos' },
   { key: 'orders', label: 'Pedidos' },
   { key: 'money', label: 'Movimientos de dinero' },
   { key: 'debts', label: 'Deudas' },
   { key: 'losses', label: 'Pérdidas' },
   { key: 'notifications', label: 'Avisos' },
-  { key: 'reviews', label: 'Reseñas' }
+  { key: 'reviews', label: 'Reseñas' },
+  { key: 'settings', label: 'Configuración global' },
+  { key: 'cashRegister', label: 'Caja' }
 ] as const;
 
 type EditableCollectionKey = typeof EDITABLE_COLLECTIONS[number]['key'];
+const ARRAY_EDITABLE_KEYS = new Set<EditableCollectionKey>(EDITABLE_COLLECTIONS
+  .map(x => x.key)
+  .filter(x => !['settings', 'cashRegister'].includes(x)) as EditableCollectionKey[]);
 
 function createEditableRecord(collection: EditableCollectionKey): any {
   const now = new Date().toISOString();
   const id = uid(collection.slice(0, 4));
-  const templates: Record<EditableCollectionKey, any> = {
+  const templates: Record<string, any> = {
     products: { id, name: 'Nuevo producto', description: '', category: 'General', categories: ['General'], price: 0, cost: 0, manualCost: 0, stock: 0, active: true, seasonal: false, tags: [], flavors: [], sizes: [], presentation: '', options: [], customizable: false },
     ingredients: { id, name: 'Nuevo ingrediente', unit: 'unidad', unitCost: 0, stock: 0, minStock: 0, supplier: '', expiration: '' },
     recipes: { id, productId: '', name: 'Nueva receta', yieldUnits: 1, ingredients: [], packagingCost: 0, utilityCost: 0, serviceCost: 0, laborHours: 0, laborRate: 0, otherCost: 0, totalCost: 0, salePrice: 0, margin: 0 },
@@ -1599,10 +1604,16 @@ function UniversalEditor({ state, onChange }: { state: BusinessState; onChange: 
   const [selectedId, setSelectedId] = useState('');
   const [draft, setDraft] = useState<Record<string, any> | null>(null);
   const [advanced, setAdvanced] = useState('');
-  const items = (state[collection] as any[]) || [];
+  const isSingleton = collection === 'settings' || collection === 'cashRegister';
+  const items = isSingleton
+    ? [{ id: collection, ...(structuredClone((state as any)[collection] || {})) }]
+    : (((state as any)[collection] as any[]) || []);
 
   useEffect(() => {
-    const current = items.find(item => item?.id === selectedId) || items[0];
+    const current = isSingleton
+      ? items[0]
+      : items.find(item => item?.id === selectedId) || items[0];
+
     if (current) {
       setSelectedId(String(current.id));
       const copy = structuredClone(current);
@@ -1619,14 +1630,15 @@ function UniversalEditor({ state, onChange }: { state: BusinessState; onChange: 
       setDraft(null);
       setAdvanced('{}');
     }
-  }, [collection, state[collection], selectedId]);
+  }, [collection, state, selectedId, isSingleton]);
 
   function add() {
+    if (isSingleton) return;
     const record = createEditableRecord(collection);
     onChange(current => ({
       ...current,
-      [collection]: [record, ...(((current[collection] as any[]) || []))]
-    }));
+      [collection]: [record, ...(((current as any)[collection] as any[]) || [])]
+    } as BusinessState));
     setSelectedId(record.id);
     setDraft(record);
     setAdvanced(JSON.stringify(
@@ -1637,7 +1649,8 @@ function UniversalEditor({ state, onChange }: { state: BusinessState; onChange: 
   }
 
   function save() {
-    if (!draft || !selectedId) return;
+    if (!draft) return;
+
     let complex: Record<string, unknown> = {};
     try {
       complex = JSON.parse(advanced || '{}');
@@ -1646,35 +1659,52 @@ function UniversalEditor({ state, onChange }: { state: BusinessState; onChange: 
       window.alert('Revisa los detalles avanzados: deben ser un objeto JSON válido.');
       return;
     }
-    const nextItem = { ...draft, ...complex, id: selectedId };
-    onChange(current => ({
-      ...current,
-      [collection]: ((current[collection] as any[]) || []).map(item => item.id === selectedId ? nextItem : item)
-    }));
+
+    const nextItem = { ...draft, ...complex };
+    delete nextItem.token;
+    delete nextItem.pinHash;
+
+    onChange(current => {
+      if (isSingleton) {
+        return recalculateBusinessState({
+          ...current,
+          [collection]: nextItem
+        } as BusinessState);
+      }
+
+      return recalculateBusinessState({
+        ...current,
+        [collection]: ((current as any)[collection] as any[] || [])
+          .map(item => item.id === selectedId ? { ...nextItem, id: selectedId } : item)
+      } as BusinessState);
+    });
   }
 
   function remove() {
-    if (!draft || !selectedId) return;
-    if (!window.confirm('¿Eliminar este elemento? Los datos relacionados se reajustarán automáticamente.')) return;
-    onChange(current => ({
+    if (!draft || isSingleton || !selectedId) return;
+    if (!window.confirm('¿Eliminar este elemento? Las referencias dependientes se limpiarán y los cálculos se actualizarán automáticamente.')) return;
+
+    onChange(current => recalculateBusinessState({
       ...current,
-      [collection]: ((current[collection] as any[]) || []).filter(item => item.id !== selectedId)
-    }));
+      [collection]: ((current as any)[collection] as any[] || []).filter(item => item.id !== selectedId)
+    } as BusinessState));
+
     setSelectedId('');
     setDraft(null);
   }
 
   function duplicate() {
-    if (!draft) return;
+    if (!draft || isSingleton) return;
     const copy: any = structuredClone(draft);
     copy.id = uid('copy');
     if (typeof copy.name === 'string') copy.name += ' (copia)';
     if ('createdAt' in copy) copy.createdAt = new Date().toISOString();
     if ('date' in copy) copy.date = new Date().toISOString();
+
     onChange(current => ({
       ...current,
-      [collection]: [copy, ...(((current[collection] as any[]) || []))]
-    }));
+      [collection]: [copy, ...(((current as any)[collection] as any[]) || [])]
+    } as BusinessState));
     setSelectedId(copy.id);
   }
 
@@ -1690,22 +1720,22 @@ function UniversalEditor({ state, onChange }: { state: BusinessState; onChange: 
   return <div className="content">
     <section className="panel">
       <div className="panel-head">
-        <div><p className="eyebrow">CONTROL TOTAL</p><h3>Editor profundo</h3></div>
-        <span className="status">{items.length} registros</span>
+        <div><p className="eyebrow">CONTROL TOTAL</p><h3>Editor profundo de todo el negocio</h3></div>
+        <span className="status">{isSingleton ? 'Configuración global' : items.length + ' registros'}</span>
       </div>
-      <p className="muted">Puedes crear, modificar, duplicar y eliminar registros. Los objetos y listas también son editables. Al guardar, el motor recalcula costos, precios, referencias y cuentas relacionadas.</p>
+      <p className="muted">Aquí puedes crear, modificar, duplicar, eliminar y editar en profundidad cualquier registro. Los cambios pasan por el motor de dependencias: recetas, costos, precios, pedidos abiertos, referencias, inventario y finanzas se recalculan automáticamente.</p>
       <div className="form-grid">
-        <label>Qué quieres editar<select value={collection} onChange={e => { setCollection(e.target.value as EditableCollectionKey); setSelectedId(''); }}>{EDITABLE_COLLECTIONS.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}</select></label>
-        <label>Registro<select value={selectedId} onChange={e => setSelectedId(e.target.value)}>{items.length ? items.map(item => { const row = item as any; return <option key={row.id} value={row.id}>{String(row.name || row.customerName || row.description || row.item || row.id)}</option>; }) : <option value="">No hay registros</option>}</select></label>
+        <label>Área<select value={collection} onChange={e => { setCollection(e.target.value as EditableCollectionKey); setSelectedId(''); }}>{EDITABLE_COLLECTIONS.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}</select></label>
+        {!isSingleton ? <label>Registro<select value={selectedId} onChange={e => setSelectedId(e.target.value)}>{items.length ? items.map(item => { const row = item as any; return <option key={row.id} value={row.id}>{String(row.name || row.customerName || row.description || row.item || row.id)}</option>; }) : <option value="">No hay registros</option>}</select></label> : <label>Registro<input value={collection === 'settings' ? 'Configuración del negocio' : 'Caja principal'} readOnly /></label>}
       </div>
       <div className="button-row">
-        <button className="primary" onClick={add}>＋ Nuevo registro</button>
-        {draft ? <button className="secondary" onClick={duplicate}>Duplicar</button> : null}
+        {!isSingleton ? <button className="primary" onClick={add}>＋ Nuevo registro</button> : null}
+        {draft && !isSingleton ? <button className="secondary" onClick={duplicate}>Duplicar</button> : null}
       </div>
     </section>
 
     {draft ? <section className="panel">
-      <div className="panel-head"><div><p className="eyebrow">CAMPOS EDITABLES</p><h3>{String(draft.name || draft.customerName || draft.description || 'Registro')}</h3></div></div>
+      <div className="panel-head"><div><p className="eyebrow">CAMPOS EDITABLES</p><h3>{String(draft.name || draft.customerName || draft.description || collection)}</h3></div></div>
       <div className="form-grid">
         {primitiveEntries.map(([key, value]) => {
           const label = friendlyFieldName(key);
@@ -1713,17 +1743,18 @@ function UniversalEditor({ state, onChange }: { state: BusinessState; onChange: 
           return <label key={key}>{label}<input type={typeof value === 'number' ? 'number' : 'text'} value={value === null ? '' : String(value)} onChange={e => updatePrimitive(key, typeof value === 'number' ? Number(e.target.value) : e.target.value)} /></label>;
         })}
       </div>
-      <label>Objetos y listas — edición profunda
+      <label>Objetos, listas y relaciones — edición profunda
         <textarea className="advanced-editor" value={advanced} onChange={e => setAdvanced(e.target.value)} spellCheck={false} />
       </label>
       <div className="button-row">
-        <button className="primary" onClick={save}>Guardar cambios y recalcular todo</button>
-        <button className="danger-button" onClick={remove}>Eliminar y reajustar dependencias</button>
+        <button className="primary" onClick={save}>Guardar y recalcular absolutamente todo</button>
+        {!isSingleton ? <button className="danger-button" onClick={remove}>Eliminar y reajustar dependencias</button> : null}
       </div>
-      <p className="muted small">El ID interno permanece fijo para no romper referencias. El resto de los datos puede modificarse.</p>
+      <p className="muted small">Los IDs internos se conservan al editar para que las relaciones no se rompan. Los campos restantes son modificables.</p>
     </section> : <section className="panel"><Empty text="Crea un registro nuevo o selecciona uno existente." /></section>}
   </div>;
 }
+
 function friendlyFieldName(key: string): string {
   const labels: Record<string, string> = {
     name: 'Nombre', phone: 'Teléfono', address: 'Dirección', customerName: 'Cliente', customerPhone: 'Teléfono del cliente',
