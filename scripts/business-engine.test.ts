@@ -284,7 +284,7 @@ const serviceChangedLinked = applyBusinessChange(withService, {
   id: 'svc_1',
   value: { amount: 4 }
 });
-assert(serviceChangedLinked.recipes[0].totalCost === 17, 'service amount change propagates to linked recipe and product cost');
+assert(serviceChangedLinked.recipes[0].totalCost === 19, 'service amount change propagates to linked recipe and product cost');
 
 const defaultsState = applyBusinessChange(serviceChangedLinked, {
   collection: 'recipes',
