@@ -86,7 +86,8 @@ function base(): BusinessState {
     items: [{ productId: 'prd_a', productName: 'Queque', quantity: 2, unitPrice: 10, cost: 9, subtotal: 20 }],
     subtotal: 20,
     discount: 0,
-    total: 20,
+    deliveryFee: 3,
+    total: 23,
     status: 'pendiente',
     paid: 0,
     source: 'admin'
@@ -211,7 +212,27 @@ assert(done.items[0].productName === 'Queque', 'delivered order keeps historical
 assert(done.items[0].unitPrice === 10, 'delivered order keeps historical price');
 assert(open.items[0].productName === 'Queque Especial', 'open order follows current product name');
 assert(open.items[0].unitPrice === 12, 'open order follows current product price');
-assert(open.total === 24, 'open order total is recalculated from current product price');
+assert(open.total === 27, 'open order total is recalculated from current product price and delivery');
+assert(open.deliveryFee === 3, 'open order preserves delivery fee during recalculation');
+
+const prepared = applyBusinessChange(s2, {
+  collection: 'orders',
+  action: 'update',
+  id: 'ord_open',
+  value: { status: 'preparando' }
+});
+assert(prepared.orders.find(o => o.id === 'ord_open')?.inventoryDeducted === true, 'preparing order marks inventory as deducted');
+assert((prepared.orders.find(o => o.id === 'ord_open')?.inventoryConsumption?.ing_a ?? 0) === 0.4, 'preparing order records exact ingredient consumption');
+assert(prepared.ingredients[0].stock === 999.6, 'preparing order deducts recipe ingredients exactly once');
+
+const preparedChanged = applyBusinessChange(prepared, {
+  collection: 'orders',
+  action: 'update',
+  id: 'ord_open',
+  value: { items: [{ ...prepared.orders.find(o => o.id === 'ord_open')!.items[0], quantity: 3 }] }
+});
+assert(preparedChanged.ingredients[0].stock === 999.4, 'editing prepared order quantity adjusts inventory by the delta');
+assert((preparedChanged.orders.find(o => o.id === 'ord_open')?.inventoryConsumption?.ing_a ?? 0) === 0.6, 'prepared order consumption snapshot updates with order item change');
 
 const paid = applyBusinessChange(s2, {
   collection: 'orders',
