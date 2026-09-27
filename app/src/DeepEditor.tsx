@@ -7,7 +7,7 @@ type CollectionKey =
   | 'products' | 'ingredients' | 'recipes' | 'suppliers' | 'customers'
   | 'promotions' | 'combos' | 'loyaltyRewards' | 'services' | 'orders'
   | 'money' | 'debts' | 'losses' | 'notifications' | 'reviews'
-  | 'settings' | 'cashRegister';
+  | 'settings' | 'cashRegister' | 'admin';
 
 const COLLECTIONS: Array<{ key: CollectionKey; label: string }> = [
   { key: 'products', label: 'Productos' }, { key: 'ingredients', label: 'Ingredientes / inventario' },
@@ -18,7 +18,7 @@ const COLLECTIONS: Array<{ key: CollectionKey; label: string }> = [
   { key: 'money', label: 'Movimientos de dinero' }, { key: 'debts', label: 'Deudas' },
   { key: 'losses', label: 'Pérdidas / desperdicios' }, { key: 'notifications', label: 'Avisos' },
   { key: 'reviews', label: 'Reseñas' }, { key: 'settings', label: 'Configuración' },
-  { key: 'cashRegister', label: 'Caja' }
+  { key: 'cashRegister', label: 'Caja' }, { key: 'admin', label: 'Cuenta de administrador' }
 ];
 
 const labels: Record<string,string> = {
@@ -73,7 +73,7 @@ function template(collection: CollectionKey): any {
     combos:{id,name:'Nuevo combo',productIds:[],price:0,active:true},
     loyaltyRewards:{id,name:'Nuevo premio',points:0,discount:0,active:true},
     services:{id,name:'Nuevo servicio',amount:0,unit:'unidad',active:true},
-    orders:{id,createdAt:now,customerName:'',customerPhone:'',items:[],subtotal:0,discount:0,total:0,status:'pendiente',paid:0,source:'admin'},
+    orders:{id,createdAt:now,customerName:'',customerPhone:'',items:[],subtotal:0,discount:0,deliveryFee:0,total:0,status:'pendiente',paid:0,source:'admin'},
     money:{id,date:now,type:'gasto',amount:0,description:'',category:'General',method:'efectivo'},
     debts:{id,type:'cobrar',person:'',amount:0,description:'',paid:false},
     losses:{id,date:now,item:'',quantity:0,value:0,reason:''},
@@ -213,8 +213,10 @@ export function DeepEditor({state,onChange}:{state:BusinessState;onChange:(mutat
   const [draft,setDraft]=useState<any|null>(null);
   const [search,setSearch]=useState('');
 
-  const singleton = collection === 'settings' || collection === 'cashRegister';
-  const items:any[] = singleton ? [{id:collection,...structuredClone((state as any)[collection]||{})}] : (((state as any)[collection]||[]) as any[]);
+  const singleton = collection === 'settings' || collection === 'cashRegister' || collection === 'admin';
+  const items:any[] = singleton
+    ? [{id:collection,...structuredClone((state as any)[collection] || (collection === 'admin' ? { name: '', phone: '' } : {}))}]
+    : (((state as any)[collection]||[]) as any[]);
   const filtered = useMemo(()=>items.filter(x=>!search.trim() || JSON.stringify(x).toLowerCase().includes(search.toLowerCase())),[items,search]);
 
   function select(id:string) {
