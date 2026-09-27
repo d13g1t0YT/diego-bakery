@@ -18,9 +18,14 @@ const upload = multer({
       name.endsWith('.txt') ||
       name.endsWith('.docx') ||
       name.endsWith('.pdf') ||
+      name.endsWith('.png') ||
+      name.endsWith('.jpg') ||
+      name.endsWith('.jpeg') ||
       mime === 'text/plain' ||
       mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-      mime === 'application/pdf';
+      mime === 'application/pdf' ||
+      mime === 'image/png' ||
+      mime === 'image/jpeg';
     cb(null, allowed);
   }
 });
@@ -31,6 +36,7 @@ type AIRecipe = {
   ingredients: Array<{ name: string; quantity: number; unit: string }>;
   procedure: string[];
   notes: string[];
+  specifications?: ParsedRecipe['specifications'];
 };
 
 function safeAiRecipe(value: any, fallback: ParsedRecipe): ParsedRecipe {
@@ -71,6 +77,27 @@ function safeAiRecipe(value: any, fallback: ParsedRecipe): ParsedRecipe {
   if (!ingredients.length && fallback.ingredients.length) warnings.push('La IA no pudo mejorar los ingredientes; se conservaron los detectados automáticamente.');
   if (!procedure.length && fallback.procedure.length) warnings.push('La IA no pudo mejorar el procedimiento; se conservó la extracción automática.');
 
+  const rawSpecs = value.specifications && typeof value.specifications === 'object' ? value.specifications : undefined;
+  const specifications = rawSpecs ? {
+    weight: Number.isFinite(Number(rawSpecs.weight)) ? Number(rawSpecs.weight) : undefined,
+    weightUnit: rawSpecs.weightUnit ? String(rawSpecs.weightUnit) : undefined,
+    height: Number.isFinite(Number(rawSpecs.height)) ? Number(rawSpecs.height) : undefined,
+    heightUnit: rawSpecs.heightUnit ? String(rawSpecs.heightUnit) : undefined,
+    width: Number.isFinite(Number(rawSpecs.width)) ? Number(rawSpecs.width) : undefined,
+    widthUnit: rawSpecs.widthUnit ? String(rawSpecs.widthUnit) : undefined,
+    length: Number.isFinite(Number(rawSpecs.length)) ? Number(rawSpecs.length) : undefined,
+    lengthUnit: rawSpecs.lengthUnit ? String(rawSpecs.lengthUnit) : undefined,
+    diameter: Number.isFinite(Number(rawSpecs.diameter)) ? Number(rawSpecs.diameter) : undefined,
+    diameterUnit: rawSpecs.diameterUnit ? String(rawSpecs.diameterUnit) : undefined,
+    shape: rawSpecs.shape ? String(rawSpecs.shape) : undefined,
+    moldType: rawSpecs.moldType ? String(rawSpecs.moldType) : undefined,
+    packagingType: rawSpecs.packagingType ? String(rawSpecs.packagingType) : undefined,
+    temperature: Number.isFinite(Number(rawSpecs.temperature)) ? Number(rawSpecs.temperature) : undefined,
+    temperatureUnit: rawSpecs.temperatureUnit ? String(rawSpecs.temperatureUnit) : undefined,
+    bakingTimeMinutes: Number.isFinite(Number(rawSpecs.bakingTimeMinutes)) ? Number(rawSpecs.bakingTimeMinutes) : undefined,
+    finalAppearance: rawSpecs.finalAppearance ? String(rawSpecs.finalAppearance) : undefined
+  } : fallback.specifications;
+
   return {
     ...fallback,
     name,
@@ -78,20 +105,53 @@ function safeAiRecipe(value: any, fallback: ParsedRecipe): ParsedRecipe {
     ingredients: ingredients.length ? ingredients : fallback.ingredients,
     procedure: procedure.length ? procedure : fallback.procedure,
     notes: notes.length ? notes : fallback.notes,
+    specifications,
     warnings,
     confidence: Math.min(0.99, Math.max(fallback.confidence, ingredients.length ? 0.9 : 0.55))
   };
 }
 
-async function enhanceWithAI(parsed: ParsedRecipe, originalText: string): Promise<ParsedRecipe> {
+async function enhanceWithAI(
+  parsed: ParsedRecipe,
+  originalText: string,
+  fileBuffer: Buffer,
+  fileMime: string,
+  format: ParsedRecipe['sourceFormat']
+): Promise<ParsedRecipe> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey || process.env.RECIPE_IMPORT_AI !== 'true') return parsed;
 
-  const source = originalText.slice(0, 70000);
+  const prompt = [
+    'Analiza esta receta con máxima fidelidad.',
+    'Detecta el nombre, rendimiento, ingredientes en el orden correcto, cantidad exacta, unidad de medida, procedimiento en orden y notas.',
+    'También detecta, solo cuando aparezcan o puedan leerse claramente: peso final, altura, ancho, largo, diámetro, forma, tipo de molde, tipo de empaque, temperatura, tiempo de horneado y descripción de la apariencia final.',
+    'No inventes datos. Cuando un dato no esté presente, usa null.',
+    'Corrige errores obvios de OCR o columnas, pero conserva el significado original.',
+    'Devuelve exclusivamente el JSON definido en el esquema.'
+  ].join('\\n');
+
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 25000);
+  const timer = setTimeout(() => controller.abort(), 30000);
 
   try {
+    const content: any[] = [{ type: 'input_text', text: prompt }];
+    if (format === 'png' || format === 'jpg' || format === 'jpeg') {
+      content.push({
+        type: 'input_image',
+        image_url: `data:${fileMime};base64,${fileBuffer.toString('base64')}`,
+        detail: 'auto'
+      });
+    } else if (format === 'pdf') {
+      content.push({
+        type: 'input_file',
+        filename: 'receta.pdf',
+        file_data: `data:application/pdf;base64,${fileBuffer.toString('base64')}`
+      });
+      if (originalText.trim()) content.push({ type: 'input_text', text: 'Texto extraído localmente:\\n' + originalText.slice(0, 70000) });
+    } else {
+      content.push({ type: 'input_text', text: originalText.slice(0, 70000) });
+    }
+
     const response = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
@@ -102,15 +162,8 @@ async function enhanceWithAI(parsed: ParsedRecipe, originalText: string): Promis
       body: JSON.stringify({
         model: process.env.OPENAI_MODEL || 'gpt-5.6-sol',
         store: false,
-        max_output_tokens: 2200,
-        instructions: [
-          'Extrae una receta de cocina de un documento.',
-          'Debes distinguir nombre de receta, rendimiento, ingredientes con cantidad y unidad, procedimiento paso a paso y notas.',
-          'No inventes cantidades. Si una cantidad no aparece, omite ese ingrediente.',
-          'Devuelve exclusivamente el objeto JSON solicitado por el esquema.',
-          'Corrige errores obvios de separación de columnas, OCR o formato, pero conserva el significado original.'
-        ].join('\n'),
-        input: source,
+        max_output_tokens: 2800,
+        input: [{ role: 'user', content }],
         text: {
           format: {
             type: 'json_schema',
@@ -136,9 +189,33 @@ async function enhanceWithAI(parsed: ParsedRecipe, originalText: string): Promis
                   }
                 },
                 procedure: { type: 'array', items: { type: 'string' } },
-                notes: { type: 'array', items: { type: 'string' } }
+                notes: { type: 'array', items: { type: 'string' } },
+                specifications: {
+                  type: ['object', 'null'],
+                  additionalProperties: false,
+                  properties: {
+                    weight: { type: ['number', 'null'] },
+                    weightUnit: { type: ['string', 'null'] },
+                    height: { type: ['number', 'null'] },
+                    heightUnit: { type: ['string', 'null'] },
+                    width: { type: ['number', 'null'] },
+                    widthUnit: { type: ['string', 'null'] },
+                    length: { type: ['number', 'null'] },
+                    lengthUnit: { type: ['string', 'null'] },
+                    diameter: { type: ['number', 'null'] },
+                    diameterUnit: { type: ['string', 'null'] },
+                    shape: { type: ['string', 'null'] },
+                    moldType: { type: ['string', 'null'] },
+                    packagingType: { type: ['string', 'null'] },
+                    temperature: { type: ['number', 'null'] },
+                    temperatureUnit: { type: ['string', 'null'] },
+                    bakingTimeMinutes: { type: ['number', 'null'] },
+                    finalAppearance: { type: ['string', 'null'] }
+                  },
+                  required: ['weight','weightUnit','height','heightUnit','width','widthUnit','length','lengthUnit','diameter','diameterUnit','shape','moldType','packagingType','temperature','temperatureUnit','bakingTimeMinutes','finalAppearance']
+                }
               },
-              required: ['name', 'yieldUnits', 'ingredients', 'procedure', 'notes']
+              required: ['name', 'yieldUnits', 'ingredients', 'procedure', 'notes', 'specifications']
             }
           }
         }
@@ -153,7 +230,7 @@ async function enhanceWithAI(parsed: ParsedRecipe, originalText: string): Promis
         ? payload.output.flatMap((item: any) => item?.content || [])
             .filter((part: any) => part?.type === 'output_text')
             .map((part: any) => part.text)
-            .join('\n')
+            .join('\\n')
         : '';
 
     if (!raw) return parsed;
@@ -174,14 +251,24 @@ router.post('/importar', autenticar, upload.single('file'), async (req: AuthRequ
     }
 
     const { text, format } = await extractRecipeText(req.file.buffer, req.file.originalname);
-    if (!text.trim()) {
+    const imageFormat = format === 'png' || format === 'jpg' || format === 'jpeg';
+    const aiEnabled = Boolean(process.env.OPENAI_API_KEY && process.env.RECIPE_IMPORT_AI === 'true');
+
+    if (!text.trim() && !imageFormat && !(format === 'pdf' && aiEnabled)) {
       res.status(422).json({
-        error: 'No se pudo extraer texto de ese archivo. Si es un PDF escaneado como imagen, necesitará OCR antes de importarlo.'
+        error: 'No se pudo extraer texto de ese archivo. Activa la importación IA para analizar PDFs escaneados.'
       });
       return;
     }
 
-    const parsed = await enhanceWithAI(parseRecipeText(text, format), text);
+    const fallbackText = text.trim() ? text : 'Documento visual: la información debe extraerse de la imagen o del PDF.';
+    const parsed = await enhanceWithAI(
+      parseRecipeText(fallbackText, format),
+      text,
+      req.file.buffer,
+      req.file.mimetype,
+      format
+    );
 
     res.json({
       filename: req.file.originalname,
