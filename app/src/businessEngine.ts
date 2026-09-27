@@ -88,8 +88,9 @@ export function recalculateBusinessState(input: BusinessState): BusinessState {
   const recoveryMonths = Math.max(1, n(state.settings.pricingInvestmentRecoveryMonths));
   const profitPct = Math.max(0, n(state.settings.pricingTargetProfitPercent));
 
+  const lossesRecorded = state.losses.reduce((sum, loss) => sum + n(loss.value), 0);
   const monthlyFixedCost = state.settings.pricingIncludeExpenses ? finance.expenses : 0;
-  const monthlyLossAllowance = state.settings.pricingIncludeLosses ? finance.losses : 0;
+  const monthlyLossAllowance = state.settings.pricingIncludeLosses ? lossesRecorded : 0;
   const monthlyInvestmentRecovery = finance.investments / recoveryMonths;
   const burdenTotal = monthlyFixedCost + monthlyLossAllowance + monthlyInvestmentRecovery;
   const burdenPerUnit = burdenTotal / monthlyUnits;
