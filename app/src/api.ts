@@ -1,4 +1,4 @@
-import type { BusinessState, Order, Product } from './types';
+import type { BusinessAction, BusinessState, Order, Product } from './types';
 
 const configured = (import.meta.env.VITE_API_URL || '').trim();
 const fallbackOrigin = typeof window !== 'undefined' && /^https?:$/.test(window.location.protocol)
@@ -136,8 +136,8 @@ export async function askBusinessAi(
   question: string,
   state: BusinessState,
   history: Array<{ role: 'user' | 'assistant'; content: string }> = []
-): Promise<{ answer: string }> {
-  return request<{ answer: string }>('/api/ia/asesor', {
+): Promise<{ answer: string; actions: BusinessAction[] }> {
+  return request<{ answer: string; actions: BusinessAction[] }>('/api/ia/asesor', {
     method: 'POST',
     body: JSON.stringify({
       question,
