@@ -401,7 +401,10 @@ function buildProductPricing(
     const ingredientCost = recipe
       ? recipe.ingredients.reduce((sum, line) => {
           const ingredient = state.ingredients.find(i => i.id === line.ingredientId);
-          return sum + (ingredient ? n(ingredient.unitCost) * n(line.quantity) : 0);
+          if (!ingredient) return sum;
+          const converted = convertQuantity(n(line.quantity), line.unit, ingredient.unit);
+          const quantityInIngredientUnit = converted == null ? n(line.quantity) : converted;
+          return sum + n(ingredient.unitCost) * quantityInIngredientUnit;
         }, 0)
       : n(product.manualCost ?? product.cost);
 
