@@ -79,6 +79,9 @@ export interface Recipe {
   name: string;
   yieldUnits: number;
   ingredients: RecipeLine[];
+  procedure?: string[];
+  notes?: string[];
+  sourceFile?: string;
   serviceLines?: ServiceLine[];
   packagingCost: number;
   utilityCost: number;
