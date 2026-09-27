@@ -6,10 +6,12 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc && mkdir -p dist/db && cp src/db/schema.sql dist/db/schema.sql",
+    "build": "npm run test:all && tsc && mkdir -p dist/db && cp src/db/schema.sql dist/db/schema.sql",
     "start": "node dist/index.js",
     "db:migrate": "tsx src/db/migrate.ts",
-    "test:business": "tsx scripts/business-engine.test.ts"
+    "test:business": "tsx scripts/business-engine.test.ts",
+    "test:recipe": "tsx scripts/recipe-import.test.ts",
+    "test:all": "npm run test:business && npm run test:recipe"
   },
   "keywords": [
     "bakery",
