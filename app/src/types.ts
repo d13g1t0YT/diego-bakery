@@ -273,6 +273,14 @@ export interface LocalAdmin {
   token?: string;
 }
 
+export interface BusinessAction {
+  collection: 'products' | 'ingredients' | 'recipes' | 'suppliers' | 'customers' | 'promotions' | 'combos' | 'loyaltyRewards' | 'services' | 'orders' | 'money' | 'debts' | 'losses' | 'notifications' | 'reviews';
+  action: 'add' | 'update' | 'delete';
+  id?: string;
+  value?: Record<string, unknown>;
+  reason?: string;
+}
+
 export interface BusinessState {
   products: Product[];
   ingredients: Ingredient[];
