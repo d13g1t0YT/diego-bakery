@@ -57,6 +57,7 @@ router.post('/nuevo-producto', autenticar, async (req: AuthRequest, res: Respons
     'Ofrece escenarios por unidad, porción, media docena/docena o molde cuando tengan sentido.',
     'Explica cualquier supuesto de forma explícita.',
     'Nunca ejecutes cambios en la base de datos: solo asesora y devuelve una propuesta estructurada.',
+    'Cuando haya datos suficientes, incluye productDraft completo. Solo incluye información que esté sustentada por la conversación o por el estado del negocio.',
     'Devuelve exclusivamente el objeto JSON del esquema.'
   ].join('\n');
 
@@ -106,9 +107,41 @@ router.post('/nuevo-producto', autenticar, async (req: AuthRequest, res: Respons
                     confidence: { type: ['number', 'null'] }
                   },
                   required: ['yieldUnits', 'unitCost', 'totalBatchCost', 'suggestedPrice', 'confidence']
+                },
+                productDraft: {
+                  type: ['object', 'null'],
+                  additionalProperties: false,
+                  properties: {
+                    name: { type: ['string', 'null'] },
+                    description: { type: ['string', 'null'] },
+                    category: { type: ['string', 'null'] },
+                    presentation: { type: ['string', 'null'] },
+                    ingredients: {
+                      type: ['array', 'null'],
+                      items: {
+                        type: 'object',
+                        additionalProperties: false,
+                        properties: {
+                          name: { type: 'string' },
+                          quantity: { type: 'number' },
+                          unit: { type: 'string' },
+                          unitCost: { type: ['number', 'null'] }
+                        },
+                        required: ['name', 'quantity', 'unit', 'unitCost']
+                      }
+                    },
+                    procedure: {
+                      type: ['array', 'null'],
+                      items: { type: 'string' }
+                    },
+                    pricePerUnit: { type: ['number', 'null'] },
+                    pricePerBatch: { type: ['number', 'null'] },
+                    targetMarginPercent: { type: ['number', 'null'] }
+                  },
+                  required: ['name', 'description', 'category', 'presentation', 'ingredients', 'procedure', 'pricePerUnit', 'pricePerBatch', 'targetMarginPercent']
                 }
               },
-              required: ['message', 'question', 'field', 'ready', 'estimate']
+              required: ['message', 'question', 'field', 'ready', 'estimate', 'productDraft']
             }
           }
         }
@@ -142,7 +175,8 @@ router.post('/nuevo-producto', autenticar, async (req: AuthRequest, res: Respons
       question: parsed.question == null ? undefined : String(parsed.question),
       field: parsed.field == null ? undefined : String(parsed.field),
       ready: Boolean(parsed.ready),
-      estimate: parsed.estimate || undefined
+      estimate: parsed.estimate || undefined,
+      productDraft: parsed.productDraft || undefined
     });
   } catch (error) {
     console.error('Error en asesor de nuevo producto:', error);
