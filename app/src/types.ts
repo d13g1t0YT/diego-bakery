@@ -217,6 +217,7 @@ export interface Order {
   paidAt?: string;
   proofUrl?: string;
   discountCode?: string;
+  promotionId?: string;
   loyaltyPointsUsed?: number;
   inventoryDeducted?: boolean;
   loyaltyAwardedAt?: string;
