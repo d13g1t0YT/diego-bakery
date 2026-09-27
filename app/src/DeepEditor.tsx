@@ -35,7 +35,7 @@ const labels: Record<string,string> = {
   margin:'Margen %', phone:'Teléfono', notes:'Notas', addresses:'Direcciones', points:'Puntos',
   level:'Nivel', favorites:'Favoritos', createdAt:'Creado', code:'Código', type:'Tipo',
   value:'Valor', minQuantity:'Cantidad mínima', startAt:'Inicio', endAt:'Fin',
-  discount:'Descuento', amount:'Monto', date:'Fecha', category:'Categoría', method:'Método',
+  discount:'Descuento', amount:'Monto', date:'Fecha', method:'Método',
   person:'Persona', dueDate:'Vencimiento', paid:'Pagado', item:'Elemento', quantity:'Cantidad',
   reason:'Motivo', title:'Título', message:'Mensaje', read:'Leído', rating:'Calificación',
   comment:'Comentario', customerId:'Cliente', customerName:'Cliente', customerPhone:'Teléfono del cliente',
