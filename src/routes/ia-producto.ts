@@ -231,7 +231,7 @@ router.post('/nuevo-producto', autenticar, async (req: AuthRequest, res: Respons
       return;
     }
 
-    const payload = await response.json();
+    const payload: any = await response.json();
     const raw = typeof payload?.output_text === 'string'
       ? payload.output_text
       : Array.isArray(payload?.output)
