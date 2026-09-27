@@ -9,10 +9,13 @@ const main = read('app/src/main.tsx');
 const index = read('app/index.html');
 const sw = read('app/public/sw.js');
 const api = read('app/src/api.ts');
+const desktop = read('desktop/main.cjs');
 
 const checks = [
-  ['remote URL exists', main.includes('https://diego-bakery-api-clean-production.up.railway.app/app/')],
-  ['native redirect is guarded', main.includes('if (native && !alreadyRemote)') && main.includes('if (await remoteAvailable())') && main.includes('window.location.replace(REMOTE_APP)')],
+  ['native app does not redirect to web', !main.includes('window.location.replace') && !main.includes('REMOTE_APP')],
+  ['native app renders bundled frontend', main.includes('createRoot(root).render')],
+  ['desktop loads bundled renderer', desktop.includes('win.loadFile(rendererPath)') && !desktop.includes('win.loadURL(')],
+  ['desktop does not contain remote app URL', !desktop.includes('/app/') && !desktop.includes('REMOTE_URL')],
   ['no recursive loader import', !main.includes("import('./local-loader.js")],
   ['index loads main directly', index.includes('src="./src/main.tsx"') || index.includes('src="/src/main.tsx"')],
   ['service worker cache v6', sw.includes('diego-bakery-v6')],
@@ -24,6 +27,7 @@ const checks = [
   ['old merge assignment is gone', !app.includes('const merged = localIsNewer ? mergeStatePreservingLocal(local, remoteState) : mergeStateFromCloud(local, remoteState)')],
   ['old merge function declarations are gone', !app.includes('function mergeStateFromCloud') && !app.includes('function mergeStatePreservingLocal')],
   ['background refresh is five seconds', app.includes('}, 5000);')],
+  ['API request has a bounded timeout', api.includes('REQUEST_TIMEOUT_MS')]
 ];
 
 let failed = 0;
@@ -33,8 +37,8 @@ for (const [name, ok] of checks) {
 }
 
 if (failed > 0) {
-  console.error(`${failed} sync integrity checks failed.`);
+  console.error(`${failed} integrity checks failed.`);
   process.exit(1);
 }
 
-console.log('All sync integrity checks passed.');
+console.log('All integrity checks passed.');
