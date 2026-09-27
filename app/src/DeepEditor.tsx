@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { BusinessState } from './types';
 import { recalculateBusinessState } from './businessEngine';
-import { uid } from './types';
+import { uid, unitOptions } from './types';
 import { RecipeImportPanel } from './RecipeImportPanel';
 import { NewProductAdvisor } from './NewProductAdvisor';
 
@@ -66,7 +66,7 @@ function template(collection: CollectionKey): any {
   const id = uid(collection.slice(0,4));
   const now = new Date().toISOString();
   const base: Record<string, any> = {
-    products:{id,name:'Nuevo producto',description:'',category:'General',categories:['General'],price:0,cost:0,manualCost:0,stock:0,active:true,seasonal:false,tags:[],flavors:[],sizes:[],presentation:'',options:[],customizable:false},
+    products:{id,name:'Nuevo producto',description:'',category:'General',categories:['General'],price:0,cost:0,manualCost:0,stock:0,active:true,seasonal:false,tags:[],flavors:[],sizes:[],presentation:'',options:[],customizable:false,specifications:{weight:0,weightUnit:'g',height:0,heightUnit:'cm',width:0,widthUnit:'cm',length:0,lengthUnit:'cm',diameter:0,diameterUnit:'cm',shape:'',moldType:'',packagingType:'',temperature:0,temperatureUnit:'°C',bakingTimeMinutes:0,finalAppearance:''}},
     ingredients:{id,name:'Nuevo ingrediente',unit:'g',unitCost:0,stock:0,minStock:0,supplier:'',expiration:''},
     recipes:{id,productId:'',name:'Nueva receta',yieldUnits:1,ingredients:[],serviceLines:[],useDefaultPackagingCost:true,useDefaultUtilityCost:true,useDefaultLaborRate:true,packagingCost:0,utilityCost:0,serviceCost:0,laborHours:0,laborRate:0,otherCost:0,totalCost:0,salePrice:0,margin:0},
     suppliers:{id,name:'Nuevo proveedor',phone:'',notes:'',active:true},
@@ -140,12 +140,42 @@ function RelationArrayEditor({field,value,state,onChange}:{
   </div>;
 }
 
+const MEASUREMENT_UNITS = unitOptions();
+const SHAPES = ['Redondo', 'Cuadrado', 'Rectangular', 'Ovalado', 'Individual', 'Otro'];
+const MOLD_TYPES = ['Redondo', 'Cuadrado', 'Rectangular', 'Budín', 'Muffin/Cupcake', 'Desmontable', 'Otro'];
+const PACKAGING_TYPES = ['Caja', 'Bolsa', 'Blíster', 'Envase', 'Frasco', 'Individual', 'Sin empaque', 'Otro'];
+
 function FieldEditor({keyName,value,state,onChange}:{
   keyName:string; value:any; state:BusinessState; onChange:(v:any)=>void;
 }) {
   if (keyName === 'id') return <label><span>{friendly(keyName)}</span><input value={String(value)} readOnly /></label>;
   if (['productId','ingredientId','customerId','serviceId','supplier'].includes(keyName)) {
     return <label><span>{friendly(keyName)}</span><RelationPicker field={keyName} value={value} state={state} onChange={onChange}/></label>;
+  }
+  if (keyName === 'unit' || /Unit$/.test(keyName)) {
+    const options = keyName === 'temperatureUnit' ? ['°C', '°F'] : MEASUREMENT_UNITS;
+    return <label><span>{friendly(keyName)}</span><select value={String(value ?? '')} onChange={e=>onChange(e.target.value)}>
+      {options.map(option => <option key={option} value={option}>{option}</option>)}
+      {!options.includes(String(value ?? '')) && value ? <option value={String(value)}>{String(value)}</option> : null}
+    </select></label>;
+  }
+  if (keyName === 'shape') {
+    return <label><span>{friendly(keyName)}</span><select value={String(value ?? '')} onChange={e=>onChange(e.target.value)}>
+      <option value="">Por definir</option>{SHAPES.map(option=><option key={option} value={option}>{option}</option>)}
+      {!SHAPES.includes(String(value ?? '')) && value ? <option value={String(value)}>{String(value)}</option> : null}
+    </select></label>;
+  }
+  if (keyName === 'moldType') {
+    return <label><span>{friendly(keyName)}</span><select value={String(value ?? '')} onChange={e=>onChange(e.target.value)}>
+      <option value="">Por definir</option>{MOLD_TYPES.map(option=><option key={option} value={option}>{option}</option>)}
+      {!MOLD_TYPES.includes(String(value ?? '')) && value ? <option value={String(value)}>{String(value)}</option> : null}
+    </select></label>;
+  }
+  if (keyName === 'packagingType') {
+    return <label><span>{friendly(keyName)}</span><select value={String(value ?? '')} onChange={e=>onChange(e.target.value)}>
+      <option value="">Por definir</option>{PACKAGING_TYPES.map(option=><option key={option} value={option}>{option}</option>)}
+      {!PACKAGING_TYPES.includes(String(value ?? '')) && value ? <option value={String(value)}>{String(value)}</option> : null}
+    </select></label>;
   }
   if (typeof value === 'boolean') return <label className="toggle-row"><span>{friendly(keyName)}</span><input type="checkbox" checked={value} onChange={e=>onChange(e.target.checked)}/></label>;
   if (typeof value === 'number') return <label><span>{friendly(keyName)}</span><input type="number" step="any" value={value} onChange={e=>onChange(parseScalar(e.target.value,value))}/></label>;
@@ -304,6 +334,22 @@ export function DeepEditor({
     setSelectedId(copy.id); setDraft(copy);
   }
 
+  function commitDraft(nextDraft: any) {
+    setDraft(nextDraft);
+    if (!draft || collection === 'admin') return;
+    onChange(current => {
+      if (singleton) {
+        return recalculateBusinessState({ ...current, [collection]: nextDraft } as BusinessState, current);
+      }
+      return recalculateBusinessState({
+        ...current,
+        [collection]: ((current as any)[collection] || []).map((item:any) =>
+          item.id === selectedId ? { ...nextDraft, id: selectedId } : item
+        )
+      } as BusinessState, current);
+    });
+  }
+
   const primitive= draft ? Object.entries(draft).filter(([,v])=>v===null || typeof v!=='object') : [];
 
   return <div className="content">
@@ -321,13 +367,13 @@ export function DeepEditor({
     </section>
 
     {draft && <section className="panel">
-      <div className="panel-head"><div><p className="eyebrow">EDITANDO</p><h3>{titleOf(draft)}</h3></div><span className="status">Guardado solo al pulsar Guardar</span></div>
+      <div className="panel-head"><div><p className="eyebrow">EDITANDO</p><h3>{titleOf(draft)}</h3></div><span className="status">Guardado y recalculado automáticamente</span></div>
       <div className="form-grid">
-        {primitive.map(([key,val])=><FieldEditor key={key} keyName={key} value={val} state={state} onChange={v=>setDraft((d:any)=>({...d,[key]:v}))}/>)}
+        {primitive.map(([key,val])=><FieldEditor key={key} keyName={key} value={val} state={state} onChange={v=>commitDraft({...draft,[key]:v})}/>)}
       </div>
       <div className="deep-section"><h4>Relaciones, listas y detalles</h4><DeepObjectEditor value={Object.fromEntries(Object.entries(draft).filter(([,v])=>v!==null && typeof v==='object'))} state={state} onChange={v=>setDraft((d:any)=>({...d,...v}))}/></div>
       <div className="button-row">
-        <button className="primary" onClick={() => void save()}>Guardar y recalcular todo</button>
+        <button className="primary" onClick={() => void save()}>Forzar guardado y recálculo</button>
         {collection === 'admin' && onAdminPinChange ? <button className="secondary" onClick={() => void changePin()}>Cambiar PIN</button> : null}
         {!singleton&&<><button className="secondary" onClick={duplicate}>Duplicar</button><button className="danger-button" onClick={remove}>Eliminar y reajustar</button></>}
       </div>
