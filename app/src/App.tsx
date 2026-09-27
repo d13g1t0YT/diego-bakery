@@ -1006,7 +1006,7 @@ function AppInner() {
         {section === 'recetas' && <RecipesView state={state} setState={commitState} />}
         {section === 'proveedores' && <SuppliersView suppliers={state.suppliers} setSuppliers={items => updateState(current => ({ ...current, suppliers: items }))} />}
         {section === 'clientes' && <CustomersView customers={state.customers} setCustomers={items => updateState(current => ({ ...current, customers: items }))} />}
-        {section === 'finanzas' && <FinanceView moves={state.money} addMoney={addMoney} balance={derived.cash} />}
+        {section === 'finanzas' && <FinanceView state={state} addMoney={addMoney} balance={derived.cash} />}
         {section === 'caja' && <CashRegisterView register={state.cashRegister} setRegister={register => updateState(current => ({ ...current, cashRegister: register }))} moneyMoves={state.money} />}
         {section === 'promociones' && <PromotionsView promotions={state.promotions} products={state.products} setPromotions={items => updateState(current => ({ ...current, promotions: items }))} />}
         {section === 'combinaciones' && <CombosView combos={state.combos} products={state.products} setCombos={items => updateState(current => ({ ...current, combos: items }))} />}
@@ -1249,21 +1249,83 @@ function IngredientsView({ ingredients, onAdd, onStock, query }: { ingredients: 
   </div>;
 }
 
-function FinanceView({ moves, addMoney, balance }: { moves: MoneyMove[]; addMoney: (m: Omit<MoneyMove, 'id' | 'date'>) => void; balance: number }) {
+function FinanceView({ state, addMoney, balance }: { state: BusinessState; addMoney: (m: Omit<MoneyMove, 'id' | 'date'>) => void; balance: number }) {
   const [type, setType] = useState<MoneyMoveType>('gasto');
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('');
   const [filter, setFilter] = useState<'all' | MoneyMoveType>('all');
-  const list = moves.filter(m => filter === 'all' || m.type === filter);
+
+  const sales = state.money.filter(m => m.type === 'venta').reduce((s, m) => s + number(m.amount), 0);
+  const expenses = state.money.filter(m => m.type === 'gasto').reduce((s, m) => s + number(m.amount), 0);
+  const investments = state.money.filter(m => m.type === 'inversion').reduce((s, m) => s + number(m.amount), 0);
+  const withdrawals = state.money.filter(m => m.type === 'retiro').reduce((s, m) => s + number(m.amount), 0);
+  const debtCollected = state.money.filter(m => m.type === 'cobro_deuda').reduce((s, m) => s + number(m.amount), 0);
+  const debtPaid = state.money.filter(m => m.type === 'pago_deuda').reduce((s, m) => s + number(m.amount), 0);
+  const losses = state.losses.reduce((s, l) => s + number(l.value), 0);
+  const inventory = state.ingredients.reduce((s, i) => s + number(i.stock) * number(i.unitCost), 0);
+  const receivable = state.debts.filter(d => d.type === 'cobrar' && !d.paid).reduce((s, d) => s + number(d.amount), 0);
+  const payable = state.debts.filter(d => d.type === 'pagar' && !d.paid).reduce((s, d) => s + number(d.amount), 0);
+  const delivered = state.orders.filter(o => o.status === 'entregada');
+  const deliveredRevenue = delivered.reduce((s, o) => s + number(o.total), 0);
+  const deliveredCost = delivered.reduce((s, o) => s + o.items.reduce((x, i) => x + number(i.cost) * number(i.quantity), 0), 0);
+  const grossProfit = deliveredRevenue - deliveredCost;
+  const netProfit = grossProfit - expenses - losses;
+  const workingCapital = balance + inventory + receivable - payable;
+  const list = state.money.filter(m => filter === 'all' || m.type === filter);
+
   const submit = () => {
     const n = number(amount);
     if (n <= 0 || !description.trim()) return;
     addMoney({ type, amount: n, description: description.trim(), category: category.trim() || MOVE_LABELS[type], method: 'efectivo' });
     setAmount(''); setDescription(''); setCategory('');
   };
+
   return <div className="content">
-    <div className="metrics"><Metric label="Saldo de caja" value={money(balance)} /><Metric label="Movimientos" value={String(moves.length)} /></div>
+    <div className="metrics">
+      <Metric label="Ventas" value={money(sales)} />
+      <Metric label="Gastos" value={money(expenses)} />
+      <Metric label="Ganancia bruta" value={money(grossProfit)} />
+      <Metric label="Ganancia neta estimada" value={money(netProfit)} />
+    </div>
+
+    <section className="panel">
+      <div className="panel-head"><div><p className="eyebrow">CONTABILIDAD SIMPLE PERO COMPLETA</p><h3>¿Dónde está el dinero?</h3></div></div>
+      <div className="detail-grid">
+        <div><span>Ventas cobradas</span><b>{money(sales)}</b></div>
+        <div><span>Inversiones / capital aportado</span><b>{money(investments)}</b></div>
+        <div><span>Gastos operativos</span><b>{money(expenses)}</b></div>
+        <div><span>Retiros</span><b>{money(withdrawals)}</b></div>
+        <div><span>Cobros de deuda</span><b>{money(debtCollected)}</b></div>
+        <div><span>Pagos de deuda</span><b>{money(debtPaid)}</b></div>
+        <div><span>Valor de inventario</span><b>{money(inventory)}</b></div>
+        <div><span>Por cobrar</span><b>{money(receivable)}</b></div>
+        <div><span>Por pagar</span><b>{money(payable)}</b></div>
+        <div><span>Capital de trabajo</span><b>{money(workingCapital)}</b></div>
+        <div><span>Costo de productos entregados</span><b>{money(deliveredCost)}</b></div>
+        <div><span>Pérdidas</span><b>{money(losses)}</b></div>
+      </div>
+      <p className="muted small">Capital de trabajo = caja + inventario + cuentas por cobrar − cuentas por pagar. La ganancia no es lo mismo que el dinero disponible.</p>
+    </section>
+
+    <section className="panel">
+      <div className="panel-head"><div><p className="eyebrow">PRECIO RECOMENDADO</p><h3>Costo + gastos + inversión + pérdidas + ganancia</h3></div></div>
+      <p className="muted">El sistema recalcula automáticamente estos valores cuando cambias ingredientes, recetas, gastos, inversiones, pérdidas o la configuración de precios.</p>
+      <div className="table-wrap"><table><thead><tr><th>Producto</th><th>Costo base</th><th>Gastos</th><th>Inversión</th><th>Pérdidas</th><th>Ganancia objetivo</th><th>Precio recomendado</th><th>Precio actual</th></tr></thead>
+        <tbody>{state.products.map(p => {
+          const b = p.priceBreakdown;
+          return <tr key={p.id}><td><strong>{p.name}</strong></td><td>{money(b?.productionCost ?? p.cost)}</td><td>{money(b?.allocatedExpenses ?? 0)}</td><td>{money(b?.allocatedInvestment ?? 0)}</td><td>{money(b?.allocatedLosses ?? 0)}</td><td>{money(b?.targetProfit ?? 0)}</td><td><b>{money(b?.recommendedPrice ?? p.price)}</b></td><td>{money(p.price)}</td></tr>;
+        })}</tbody></table></div>
+      <div className="form-grid">
+        <label>Ganancia objetivo (%)<input type="number" min="0" step="0.1" value={state.settings.pricingTargetProfitPercent} onChange={e => {
+          const value = Math.max(0, number(e.target.value));
+          window.dispatchEvent(new CustomEvent('diego-bakery-pricing', { detail: { pricingTargetProfitPercent: value } }));
+        }} /></label>
+        <label>Unidades estimadas al mes<input type="number" min="1" step="1" value={state.settings.pricingExpectedMonthlyUnits} onChange={e => window.dispatchEvent(new CustomEvent('diego-bakery-pricing', { detail: { pricingExpectedMonthlyUnits: Math.max(1, number(e.target.value)) } }))} /></label>
+        <label>Recuperar inversiones en (meses)<input type="number" min="1" step="1" value={state.settings.pricingInvestmentRecoveryMonths} onChange={e => window.dispatchEvent(new CustomEvent('diego-bakery-pricing', { detail: { pricingInvestmentRecoveryMonths: Math.max(1, number(e.target.value)) } }))} /></label>
+      </div>
+    </section>
+
     <div className="grid-2">
       <section className="panel"><div className="panel-head"><div><p className="eyebrow">REGISTRAR</p><h3>Movimiento</h3></div></div>
         <div className="form-grid"><label>Tipo<select value={type} onChange={e => setType(e.target.value as MoneyMoveType)}>{(Object.keys(MOVE_LABELS) as MoneyMoveType[]).map(k => <option value={k} key={k}>{MOVE_LABELS[k]}</option>)}</select></label><label>Monto<input type="number" min="0" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} /></label></div>
@@ -1271,13 +1333,12 @@ function FinanceView({ moves, addMoney, balance }: { moves: MoneyMove[]; addMone
         <label>Categoría<input value={category} onChange={e => setCategory(e.target.value)} placeholder="Se completa sola si queda vacía" /></label>
         <button className="primary wide" onClick={submit}>Registrar movimiento</button>
       </section>
-      <section className="panel"><FilterBar title="Historial" count={list.length}><select value={filter} onChange={e => setFilter(e.target.value as 'all' | MoneyMoveType)}><option value="all">Todos</option>{(Object.keys(MOVE_LABELS) as MoneyMoveType[]).map(k => <option key={k}>{MOVE_LABELS[k]}</option>)}</select></FilterBar>
-        <div className="compact-list">{list.slice(0, 20).map(m => <div className="compact-row" key={m.id}><span><strong>{m.description}</strong><small>{MOVE_LABELS[m.type]} · {formatDate(m.date)}</small></span><b className={['gasto','retiro','pago_deuda'].includes(m.type) ? 'danger-text' : 'success-text'}>{['gasto','retiro','pago_deuda'].includes(m.type) ? '-' : '+'}{money(m.amount)}</b></div>)}</div>
+      <section className="panel"><FilterBar title="Historial" count={list.length}><select value={filter} onChange={e => setFilter(e.target.value as 'all' | MoneyMoveType)}><option value="all">Todos</option>{(Object.keys(MOVE_LABELS) as MoneyMoveType[]).map(k => <option value={k} key={k}>{MOVE_LABELS[k]}</option>)}</select></FilterBar>
+        <div className="compact-list">{list.slice(0, 50).map(m => <div className="compact-row" key={m.id}><span><strong>{m.description}</strong><small>{MOVE_LABELS[m.type]} · {m.category} · {formatDate(m.date)}</small></span><b className={['gasto','retiro','pago_deuda'].includes(m.type) ? 'danger-text' : 'success-text'}>{['gasto','retiro','pago_deuda'].includes(m.type) ? '-' : '+'}{money(m.amount)}</b></div>)}</div>
       </section>
     </div>
   </div>;
 }
-
 function DebtsView({ debts, setDebts }: { debts: Debt[]; setDebts: (items: Debt[]) => void }) {
   const [type, setType] = useState<'cobrar' | 'pagar'>('cobrar');
   const [person, setPerson] = useState('');
