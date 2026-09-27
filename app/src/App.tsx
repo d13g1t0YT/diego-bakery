@@ -688,29 +688,7 @@ function AppInner() {
       const next = { ...currentOrder, ...patch };
 
       let ingredients = current.ingredients;
-      let inventoryDeducted = currentOrder.inventoryDeducted;
-      if (patch.status === 'preparando' && !currentOrder.inventoryDeducted) {
-        ingredients = current.ingredients.map(ingredient => {
-          let stock = ingredient.stock;
-          for (const item of currentOrder.items) {
-            const entries = item.productId.startsWith('combo_')
-              ? (current.combos.find(c => c.id === item.productId.slice(6))?.productIds || []).map(productId => ({ productId, quantity: item.quantity }))
-              : [{ productId: item.productId, quantity: item.quantity }];
-            for (const entry of entries) {
-              const recipe = current.recipes.find(r => r.productId === entry.productId);
-              if (!recipe) continue;
-              for (const line of recipe.ingredients) {
-                if (line.ingredientId === ingredient.id) {
-                  stock -= (line.quantity / Math.max(1, recipe.yieldUnits)) * entry.quantity;
-                }
-              }
-            }
-          }
-          return { ...ingredient, stock: Math.max(0, Number(stock.toFixed(4))) };
-        });
-        inventoryDeducted = true;
-      }
-
+      const inventoryDeducted = currentOrder.inventoryDeducted;
       let customers = current.customers;
       if (patch.status === 'entregada' && currentOrder.status !== 'entregada' && !currentOrder.loyaltyAwardedAt) {
         const found = customers.find(c => c.phone === currentOrder.customerPhone);
@@ -810,6 +788,7 @@ function AppInner() {
       items: cart,
       subtotal: Number(subtotal.toFixed(2)),
       discount: Number(discount.toFixed(2)),
+      deliveryFee: Number(deliveryFee.toFixed(2)),
       total,
       status: 'pendiente',
       paid: 0,
