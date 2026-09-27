@@ -71,6 +71,17 @@ function calculateCostFromDraft(draft: any, state: any) {
   const targetProfit = fullUnitCost * targetPercent / 100;
   const recommendedPrice = fullUnitCost + targetProfit;
 
+  const scenarios = [
+    { label: '1 unidad / porción', quantity: 1, price: recommendedPrice },
+    ...(yieldUnits >= 6 ? [{ label: '6 unidades', quantity: 6, price: recommendedPrice * 6 }] : []),
+    ...(yieldUnits >= 12 ? [{ label: '12 unidades', quantity: 12, price: recommendedPrice * 12 }] : []),
+    { label: 'Lote / molde completo', quantity: yieldUnits, price: recommendedPrice * yieldUnits }
+  ].map(item => ({
+    label: item.label,
+    quantity: item.quantity,
+    price: Number(item.price.toFixed(2))
+  }));
+
   return {
     ingredientCost: Number(ingredientCost.toFixed(4)),
     directBatchCost: Number(directBatchCost.toFixed(4)),
@@ -81,7 +92,8 @@ function calculateCostFromDraft(draft: any, state: any) {
     fullUnitCost: Number(fullUnitCost.toFixed(4)),
     targetProfit: Number(targetProfit.toFixed(4)),
     recommendedPrice: Number(recommendedPrice.toFixed(4)),
-    yieldUnits
+    yieldUnits,
+    scenarios
   };
 }
 
@@ -249,7 +261,8 @@ router.post('/nuevo-producto', autenticar, async (req: AuthRequest, res: Respons
             unitCost: deterministic.fullUnitCost,
             totalBatchCost: deterministic.directBatchCost,
             suggestedPrice: deterministic.recommendedPrice,
-            confidence: 1
+            confidence: 1,
+            scenarios: deterministic.scenarios
           }
         : parsed.estimate || undefined,
       productDraft: productDraft
