@@ -1,4 +1,5 @@
 import { BusinessState, defaultState } from './types';
+import { recalculateBusinessState } from './businessEngine';
 
 const DB_NAME = 'diego-bakery-db';
 const STORE_NAME = 'state';
@@ -87,15 +88,15 @@ export async function loadState(): Promise<BusinessState> {
     return await new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readonly');
       const request = tx.objectStore(STORE_NAME).get(STATE_KEY);
-      request.onsuccess = () => resolve(normalizeState(request.result ?? defaultState()));
+      request.onsuccess = () => resolve(recalculateBusinessState(normalizeState(request.result ?? defaultState())));
       request.onerror = () => reject(request.error);
     });
   } catch {
     try {
       const raw = localStorage.getItem(STATE_KEY);
-      return raw ? normalizeState(JSON.parse(raw) as BusinessState) : defaultState();
+      return raw ? recalculateBusinessState(normalizeState(JSON.parse(raw) as BusinessState)) : recalculateBusinessState(defaultState());
     } catch {
-      return defaultState();
+      return recalculateBusinessState(defaultState());
     }
   }
 }
@@ -135,7 +136,7 @@ export async function restoreBackup(file: File): Promise<BusinessState> {
     throw new Error('Archivo de respaldo inválido');
   }
 
-  const safe = sanitizeState(parsed);
+  const safe = recalculateBusinessState(sanitizeState(parsed));
   await saveState(safe);
   return safe;
 }
