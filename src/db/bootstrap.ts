@@ -24,14 +24,21 @@ export async function ensureBootstrapAdmin(): Promise<void> {
     [telefono]
   );
 
-  if (existing.rows.length > 0) return;
-
   const pinHash = await bcrypt.hash(pin, 12);
+
+  if (existing.rows.length > 0) {
+    await pool.query(
+      'UPDATE usuarios SET nombre = $1, apellido = $2, pin_hash = $3, activo = true WHERE telefono = $4',
+      [nombre, apellido, pinHash, telefono]
+    );
+    console.log('✓ Administrador principal actualizado desde variables de entorno');
+    return;
+  }
 
   await pool.query(
     'INSERT INTO usuarios (nombre, apellido, telefono, pin_hash) VALUES ($1, $2, $3, $4)',
     [nombre, apellido, telefono, pinHash]
   );
 
-  console.log('✓ Administrador inicial creado desde variables de entorno');
+  console.log('✓ Administrador principal creado desde variables de entorno');
 }
