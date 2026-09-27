@@ -208,7 +208,9 @@ export interface Order {
   items: OrderItem[];
   subtotal: number;
   discount: number;
+  deliveryFee?: number;
   total: number;
+  inventoryConsumption?: Record<string, number>;
   status: OrderStatus;
   paymentMethod?: PaymentMethod;
   paid: number;
