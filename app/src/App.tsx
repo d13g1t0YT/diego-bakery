@@ -1480,6 +1480,29 @@ const EDITABLE_COLLECTIONS = [
 
 type EditableCollectionKey = typeof EDITABLE_COLLECTIONS[number]['key'];
 
+function createEditableRecord(collection: EditableCollectionKey): any {
+  const now = new Date().toISOString();
+  const id = uid(collection.slice(0, 4));
+  const templates: Record<EditableCollectionKey, any> = {
+    products: { id, name: 'Nuevo producto', description: '', category: 'General', categories: ['General'], price: 0, cost: 0, manualCost: 0, stock: 0, active: true, seasonal: false, tags: [], flavors: [], sizes: [], presentation: '', options: [], customizable: false },
+    ingredients: { id, name: 'Nuevo ingrediente', unit: 'unidad', unitCost: 0, stock: 0, minStock: 0, supplier: '', expiration: '' },
+    recipes: { id, productId: '', name: 'Nueva receta', yieldUnits: 1, ingredients: [], packagingCost: 0, utilityCost: 0, serviceCost: 0, laborHours: 0, laborRate: 0, otherCost: 0, totalCost: 0, salePrice: 0, margin: 0 },
+    suppliers: { id, name: 'Nuevo proveedor', phone: '', notes: '', active: true },
+    customers: { id, name: 'Nuevo cliente', phone: '', addresses: [], points: 0, level: 'Nuevo', favorites: [], notes: '', createdAt: now },
+    promotions: { id, name: 'Nueva promoción', code: '', description: '', type: 'percent', value: 0, minQuantity: 1, productIds: [], startAt: '', endAt: '', active: true },
+    combos: { id, name: 'Nuevo combo', productIds: [], price: 0, active: true },
+    loyaltyRewards: { id, name: 'Nuevo premio', points: 0, discount: 0, active: true },
+    services: { id, name: 'Nuevo servicio', amount: 0, unit: 'unidad', active: true },
+    orders: { id, createdAt: now, customerName: '', customerPhone: '', items: [], subtotal: 0, discount: 0, total: 0, status: 'pendiente', paid: 0, source: 'admin' },
+    money: { id, date: now, type: 'gasto', amount: 0, description: '', category: 'General', method: 'efectivo' },
+    debts: { id, type: 'cobrar', person: '', amount: 0, description: '', paid: false },
+    losses: { id, date: now, item: '', quantity: 0, value: 0, reason: '' },
+    notifications: { id, type: 'sistema', title: '', message: '', read: false, createdAt: now },
+    reviews: { id, productId: '', customerId: undefined, rating: 5, comment: '', createdAt: now }
+  };
+  return templates[collection];
+}
+
 function UniversalEditor({ state, onChange }: { state: BusinessState; onChange: (mutator: (current: BusinessState) => BusinessState) => void }) {
   const [collection, setCollection] = useState<EditableCollectionKey>('products');
   const [selectedId, setSelectedId] = useState('');
@@ -1491,7 +1514,7 @@ function UniversalEditor({ state, onChange }: { state: BusinessState; onChange: 
     const current = items.find(item => item?.id === selectedId) || items[0];
     if (current) {
       setSelectedId(String(current.id));
-      const copy = { ...current };
+      const copy = structuredClone(current);
       delete copy.token;
       delete copy.pinHash;
       setDraft(copy);
@@ -1507,13 +1530,29 @@ function UniversalEditor({ state, onChange }: { state: BusinessState; onChange: 
     }
   }, [collection, state[collection], selectedId]);
 
+  function add() {
+    const record = createEditableRecord(collection);
+    onChange(current => ({
+      ...current,
+      [collection]: [record, ...(((current[collection] as any[]) || []))]
+    }));
+    setSelectedId(record.id);
+    setDraft(record);
+    setAdvanced(JSON.stringify(
+      Object.fromEntries(Object.entries(record).filter(([, value]) => value !== null && typeof value === 'object')),
+      null,
+      2
+    ));
+  }
+
   function save() {
-    if (!draft) return;
+    if (!draft || !selectedId) return;
     let complex: Record<string, unknown> = {};
     try {
       complex = JSON.parse(advanced || '{}');
+      if (!complex || Array.isArray(complex) || typeof complex !== 'object') throw new Error();
     } catch {
-      window.alert('Revisa los detalles avanzados: deben tener un formato JSON válido.');
+      window.alert('Revisa los detalles avanzados: deben ser un objeto JSON válido.');
       return;
     }
     const nextItem = { ...draft, ...complex, id: selectedId };
@@ -1525,18 +1564,22 @@ function UniversalEditor({ state, onChange }: { state: BusinessState; onChange: 
 
   function remove() {
     if (!draft || !selectedId) return;
-    if (!window.confirm('¿Eliminar este elemento? Esta acción no se puede deshacer desde aquí.')) return;
+    if (!window.confirm('¿Eliminar este elemento? Los datos relacionados se reajustarán automáticamente.')) return;
     onChange(current => ({
       ...current,
       [collection]: ((current[collection] as any[]) || []).filter(item => item.id !== selectedId)
     }));
+    setSelectedId('');
+    setDraft(null);
   }
 
   function duplicate() {
     if (!draft) return;
-    const copy: any = { ...draft, id: uid('copy') };
-    if (typeof copy.name === 'string') copy.name = copy.name + ' (copia)';
+    const copy: any = structuredClone(draft);
+    copy.id = uid('copy');
+    if (typeof copy.name === 'string') copy.name += ' (copia)';
     if ('createdAt' in copy) copy.createdAt = new Date().toISOString();
+    if ('date' in copy) copy.date = new Date().toISOString();
     onChange(current => ({
       ...current,
       [collection]: [copy, ...(((current[collection] as any[]) || []))]
@@ -1555,16 +1598,23 @@ function UniversalEditor({ state, onChange }: { state: BusinessState; onChange: 
 
   return <div className="content">
     <section className="panel">
-      <div className="panel-head"><div><p className="eyebrow">CONTROL TOTAL</p><h3>Editar cualquier dato</h3></div><span className="status">Edición completa</span></div>
-      <p className="muted">Aquí puedes cambiar, duplicar o eliminar cualquier registro. Los campos simples se editan con formularios; listas y objetos se editan en “Detalles avanzados”.</p>
+      <div className="panel-head">
+        <div><p className="eyebrow">CONTROL TOTAL</p><h3>Editor profundo</h3></div>
+        <span className="status">{items.length} registros</span>
+      </div>
+      <p className="muted">Puedes crear, modificar, duplicar y eliminar registros. Los objetos y listas también son editables. Al guardar, el motor recalcula costos, precios, referencias y cuentas relacionadas.</p>
       <div className="form-grid">
-        <label>Qué quieres editar<select value={collection} onChange={e => setCollection(e.target.value as EditableCollectionKey)}>{EDITABLE_COLLECTIONS.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}</select></label>
+        <label>Qué quieres editar<select value={collection} onChange={e => { setCollection(e.target.value as EditableCollectionKey); setSelectedId(''); }}>{EDITABLE_COLLECTIONS.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}</select></label>
         <label>Registro<select value={selectedId} onChange={e => setSelectedId(e.target.value)}>{items.length ? items.map(item => { const row = item as any; return <option key={row.id} value={row.id}>{String(row.name || row.customerName || row.description || row.item || row.id)}</option>; }) : <option value="">No hay registros</option>}</select></label>
+      </div>
+      <div className="button-row">
+        <button className="primary" onClick={add}>＋ Nuevo registro</button>
+        {draft ? <button className="secondary" onClick={duplicate}>Duplicar</button> : null}
       </div>
     </section>
 
     {draft ? <section className="panel">
-      <div className="panel-head"><div><p className="eyebrow">CAMPOS FÁCILES</p><h3>Editar detalles</h3></div></div>
+      <div className="panel-head"><div><p className="eyebrow">CAMPOS EDITABLES</p><h3>{String(draft.name || draft.customerName || draft.description || 'Registro')}</h3></div></div>
       <div className="form-grid">
         {primitiveEntries.map(([key, value]) => {
           const label = friendlyFieldName(key);
@@ -1572,19 +1622,17 @@ function UniversalEditor({ state, onChange }: { state: BusinessState; onChange: 
           return <label key={key}>{label}<input type={typeof value === 'number' ? 'number' : 'text'} value={value === null ? '' : String(value)} onChange={e => updatePrimitive(key, typeof value === 'number' ? Number(e.target.value) : e.target.value)} /></label>;
         })}
       </div>
-      <label>Detalles avanzados
+      <label>Objetos y listas — edición profunda
         <textarea className="advanced-editor" value={advanced} onChange={e => setAdvanced(e.target.value)} spellCheck={false} />
       </label>
       <div className="button-row">
-        <button className="primary" onClick={save}>Guardar cambios</button>
-        <button className="secondary" onClick={duplicate}>Duplicar</button>
-        <button className="danger-button" onClick={remove}>Eliminar</button>
+        <button className="primary" onClick={save}>Guardar cambios y recalcular todo</button>
+        <button className="danger-button" onClick={remove}>Eliminar y reajustar dependencias</button>
       </div>
-      <p className="muted small">El identificador interno no se puede cambiar porque se usa para sincronizar correctamente entre dispositivos.</p>
-    </section> : <section className="panel"><Empty text="No hay datos para editar en esta categoría." /></section>}
+      <p className="muted small">El ID interno permanece fijo para no romper referencias. El resto de los datos puede modificarse.</p>
+    </section> : <section className="panel"><Empty text="Crea un registro nuevo o selecciona uno existente." /></section>}
   </div>;
 }
-
 function friendlyFieldName(key: string): string {
   const labels: Record<string, string> = {
     name: 'Nombre', phone: 'Teléfono', address: 'Dirección', customerName: 'Cliente', customerPhone: 'Teléfono del cliente',
