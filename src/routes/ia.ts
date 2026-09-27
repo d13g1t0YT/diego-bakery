@@ -51,6 +51,8 @@ function sanitizeState(input: any) {
     debts: Array.isArray(state.debts) ? state.debts.map(sanitizeItem) : [],
     losses: Array.isArray(state.losses) ? state.losses.map(sanitizeItem) : [],
     notifications: Array.isArray(state.notifications) ? state.notifications.map(sanitizeItem) : [],
+    reviews: Array.isArray(state.reviews) ? state.reviews.map(sanitizeItem) : [],
+    calculations: state.__calculations ? sanitizeItem(state.__calculations) : {},
     cashRegister: state.cashRegister ? {
       openingCash: Number(state.cashRegister.openingCash || 0),
       openedAt: state.cashRegister.openedAt,
