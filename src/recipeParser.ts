@@ -58,6 +58,15 @@ function normalizeUnit(raw: string): string {
 
 function parseNumber(raw: string): number {
   const cleaned = raw.replace(',', '.').trim();
+  const mixed = cleaned.match(/^(\d+(?:\.\d+)?)\s+(\d+)\s*\/\s*(\d+)$/);
+  if (mixed) {
+    const whole = Number(mixed[1]);
+    const numerator = Number(mixed[2]);
+    const denominator = Number(mixed[3]);
+    if (Number.isFinite(whole) && Number.isFinite(numerator) && Number.isFinite(denominator) && denominator !== 0) {
+      return whole + numerator / denominator;
+    }
+  }
   if (cleaned.includes('/')) {
     const [a, b] = cleaned.split('/').map(Number);
     if (Number.isFinite(a) && Number.isFinite(b) && b !== 0) return a / b;
