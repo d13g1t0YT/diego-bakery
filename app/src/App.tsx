@@ -1457,12 +1457,14 @@ function BusinessAiView({ state, derived, token }: { state: BusinessState; deriv
   const [messages, setMessages] = useState<AssistantMessage[]>([]);
   const [question, setQuestion] = useState('');
   const [loading, setLoading] = useState(false);
+  const [pendingActions, setPendingActions] = useState<import('./types').BusinessAction[]>([]);
   const quick = [
-    'Revisa todo mi negocio y dime qué debo corregir primero.',
-    'Haz todas las cuentas importantes y explícame si los números tienen sentido.',
-    'Revisa inventario, stock bajo, costos y pérdidas.',
-    'Revisa precios, márgenes y dime qué datos están mal o incompletos.',
-    'Analiza mis pedidos, pagos y deudas.',
+    'Haz una auditoría completa del negocio y prepara los cambios que consideres necesarios.',
+    'Haz todas las cuentas importantes y dime exactamente cómo se forma el precio recomendado de cada producto.',
+    'Revisa inventario, recetas, costos, stock bajo y pérdidas; corrige lo que esté mal.',
+    'Revisa precios y márgenes y prepara cambios para que los precios queden acordes con mis costos y gastos.',
+    'Revisa pedidos, pagos, deudas y finanzas y dime qué debo corregir.',
+    'Organiza mi negocio y crea los registros que falten cuando puedas hacerlo con mis datos.'
   ];
 
   async function send(text?: string) {
@@ -1479,6 +1481,7 @@ function BusinessAiView({ state, derived, token }: { state: BusinessState; deriv
     try {
       const result = await askBusinessAi(token, content, state, messages);
       setMessages(current => current.concat([{ role: 'assistant', content: result.answer }]));
+      setPendingActions(result.actions || []);
     } catch (error) {
       console.error(error);
       setMessages(current => current.concat([{ role: 'assistant', content: 'No pude consultar la IA ahora. La aplicación sigue funcionando y tus datos no se modificaron.' }]));
@@ -1487,12 +1490,36 @@ function BusinessAiView({ state, derived, token }: { state: BusinessState; deriv
     }
   }
 
+  function applyAiActions() {
+    if (!pendingActions.length) return;
+    const hasDeletes = pendingActions.some(action => action.action === 'delete');
+    if (hasDeletes && !window.confirm('La IA propone eliminar registros. ¿Quieres aplicar también esas eliminaciones?')) return;
+
+    let next = state;
+    for (const action of pendingActions) {
+      next = applyBusinessChange(next, {
+        collection: action.collection,
+        action: action.action,
+        id: action.id || undefined,
+        value: action.value
+      });
+    }
+
+    setPendingActions([]);
+    setMessages(current => current.concat([{
+      role: 'assistant',
+      content: 'Apliqué el plan. Los costos, precios recomendados, referencias y cuentas dependientes se recalcularon automáticamente.'
+    }]));
+    // El estado se actualiza mediante un evento interno que escucha el contenedor.
+    window.dispatchEvent(new CustomEvent('diego-bakery-apply-state', { detail: next }));
+  }
+
   return <div className="content">
     <section className="panel ai-hero">
       <div>
-        <p className="eyebrow">ASESOR DEL NEGOCIO</p>
-        <h3>IA de Diego Bakery</h3>
-        <p className="muted">Lee tus datos actuales, hace cuentas, encuentra problemas y te explica qué significan con palabras sencillas.</p>
+        <p className="eyebrow">ASESOR + OPERADOR DEL NEGOCIO</p>
+        <h3>IA avanzada de Diego Bakery</h3>
+        <p className="muted">Analiza ventas, costos, inventario, recetas, clientes, pedidos, deudas, pérdidas y finanzas. También puede preparar cambios concretos para crear, modificar o eliminar datos.</p>
       </div>
       <div className="ai-stats">
         <div><span>Ventas</span><b>{money(derived.sales)}</b></div>
@@ -1502,25 +1529,30 @@ function BusinessAiView({ state, derived, token }: { state: BusinessState; deriv
       </div>
     </section>
 
+    {pendingActions.length ? <section className="panel">
+      <div className="panel-head"><div><p className="eyebrow">PLAN PREPARADO POR LA IA</p><h3>{pendingActions.length} cambio(s) listo(s) para aplicar</h3></div><span className="status">Recalcula dependencias</span></div>
+      <div className="compact-list">{pendingActions.map((action, index) => <div className="compact-row" key={index}><span><strong>{action.action.toUpperCase()} · {action.collection}</strong><small>{action.reason || 'Cambio propuesto por la IA'}</small></span><b>{action.id || 'Nuevo'}</b></div>)}</div>
+      <button className="primary wide" onClick={applyAiActions}>Aplicar plan de la IA</button>
+    </section> : null}
+
     <section className="panel">
-      <div className="panel-head"><div><p className="eyebrow">ACCIONES RÁPIDAS</p><h3>Pídele una revisión completa</h3></div><span className="status">{token ? 'IA conectable' : 'Falta iniciar sesión'}</span></div>
+      <div className="panel-head"><div><p className="eyebrow">ACCIONES RÁPIDAS</p><h3>Pídele una revisión o que prepare cambios</h3></div><span className="status">{token ? 'IA conectada al negocio' : 'Falta iniciar sesión'}</span></div>
       <div className="ai-quick-grid">{quick.map(item => <button key={item} className="secondary" onClick={() => void send(item)} disabled={loading}>{item}</button>)}</div>
     </section>
 
     <section className="panel ai-chat">
       <div className="ai-messages">
-        {messages.length === 0 ? <div className="empty">Empieza preguntando algo como: “¿Cuánto estoy ganando?” o “¿Qué debería revisar hoy?”.</div> :
+        {messages.length === 0 ? <div className="empty">Puedes pedirle que revise todo, haga cuentas, prepare productos, cambie precios, organice inventario o detecte problemas.</div> :
           messages.map((item, index) => <div className={'ai-message ' + item.role} key={index}><span>{item.role === 'user' ? 'Tú' : 'IA'}</span><p>{item.content}</p></div>)}
-        {loading ? <div className="ai-message assistant"><span>IA</span><p>Estoy revisando tus datos…</p></div> : null}
+        {loading ? <div className="ai-message assistant"><span>IA</span><p>Estoy analizando el negocio y preparando un plan…</p></div> : null}
       </div>
       <div className="ai-input-row">
-        <textarea value={question} onChange={e => setQuestion(e.target.value)} placeholder="Escribe tu pregunta..." onKeyDown={e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') void send(); }} />
+        <textarea value={question} onChange={e => setQuestion(e.target.value)} placeholder="Ej.: revisa mis precios y corrige lo que sea necesario..." onKeyDown={e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') void send(); }} />
         <button className="primary" onClick={() => void send()} disabled={loading || !question.trim()}>Preguntar</button>
       </div>
     </section>
   </div>;
 }
-
 const EDITABLE_COLLECTIONS = [
   { key: 'products', label: 'Productos' },
   { key: 'ingredients', label: 'Inventario' },
