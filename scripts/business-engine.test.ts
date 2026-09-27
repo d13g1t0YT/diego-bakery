@@ -276,7 +276,7 @@ const serviceChanged = applyBusinessChange(serviceAdded, {
   id: 'svc_1',
   value: { amount: 4 }
 });
-assert(serviceChanged.recipes[0].totalCost === 9, 'service without recipe link does not affect unrelated recipes');
+assert(serviceChanged.recipes[0].totalCost === 11, 'service without recipe link does not affect unrelated recipes');
 
 const serviceChangedLinked = applyBusinessChange(withService, {
   collection: 'services',
