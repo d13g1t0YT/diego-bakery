@@ -214,6 +214,7 @@ export interface Order {
   status: OrderStatus;
   paymentMethod?: PaymentMethod;
   paid: number;
+  paidAt?: string;
   proofUrl?: string;
   discountCode?: string;
   loyaltyPointsUsed?: number;
