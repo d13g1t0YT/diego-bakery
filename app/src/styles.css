@@ -475,3 +475,20 @@ td strong{display:block}
   .ai-input-row{grid-template-columns:1fr}
   .ai-message{max-width:96%}
 }
+
+
+/* Deep editor */
+.deep-record-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;margin-top:14px;max-height:360px;overflow:auto}
+.deep-record{display:flex;flex-direction:column;align-items:flex-start;text-align:left;gap:3px;padding:11px 12px;border:1px solid var(--border,#ddd);border-radius:10px;background:var(--panel,#fff);cursor:pointer}
+.deep-record:hover,.deep-record.selected{border-color:currentColor;box-shadow:0 0 0 2px rgba(0,0,0,.06)}
+.deep-record small{opacity:.6;font-size:11px;overflow:hidden;text-overflow:ellipsis;width:100%}
+.deep-object{display:grid;gap:12px;padding:12px;border:1px solid var(--border,#ddd);border-radius:10px}
+.deep-array{display:grid;gap:10px;padding:10px;border:1px dashed var(--border,#bbb);border-radius:10px}
+.deep-item{padding:10px;border-radius:9px;background:rgba(127,127,127,.06)}
+.deep-item-head,.deep-field-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+.deep-field{display:grid;gap:5px}
+.deep-field-head b{font-size:13px}
+.deep-section{margin-top:18px}
+.deep-section h4{margin-bottom:10px}
+.danger-button.small{padding:5px 8px;font-size:12px}
+.danger-button.tiny{padding:2px 7px;font-size:12px;min-width:28px}
