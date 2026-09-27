@@ -39,6 +39,17 @@ jobs:
       - run: npm run build
 
 
+  business-engine:
+    name: Business engine regression tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: npx tsx scripts/business-engine.test.ts
+
   sync-integrity:
     name: Sync integrity
     runs-on: ubuntu-latest
