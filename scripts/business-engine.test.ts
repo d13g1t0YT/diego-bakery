@@ -450,3 +450,26 @@ const added = applyBusinessChange(settingsUpdated, {
 assert(added.ingredients.some(i => i.id === 'ing_new'), 'add action inserts record');
 
 console.log('PASS: full dependency, ledger, services, defaults, relations, pricing and singleton tests');
+
+
+const metricState = base();
+metricState.ingredients = [{
+  id: 'ing_kg',
+  name: 'Harina por kg',
+  unit: 'kg',
+  unitCost: 20,
+  stock: 2,
+  minStock: 0,
+  supplier: 'Proveedor A'
+}];
+metricState.recipes = [{
+  ...metricState.recipes[0],
+  ingredients: [{ ingredientId: 'ing_kg', quantity: 250, unit: 'g' }],
+  yieldUnits: 10
+}];
+metricState.products = [{ ...metricState.products[0], cost: 0 }];
+const unitAware = recalculateBusinessState(metricState);
+assert(Math.abs(unitAware.recipes[0].totalCost - 0.5) < 0.0001, 'converts recipe grams to ingredient kilograms for costing');
+assert(Math.abs((unitAware.ingredients[0].stock ?? 0) - 2) < 0.0001, 'does not consume inventory before production status');
+
+console.log('PASS: measurement conversion keeps recipe cost and inventory units synchronized');
