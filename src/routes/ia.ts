@@ -132,9 +132,10 @@ function buildContext(input: any): string {
 
   const estimatedProfit = deliveredRevenue - deliveredCost - expenses - losses;
   const averageTicket = delivered.length ? deliveredRevenue / delivered.length : 0;
-  const targetProfitPercent = Number(safe.settings?.pricingTargetProfitPercent || 0);
-  const expectedMonthlyUnits = Math.max(1, Number(safe.settings?.pricingExpectedMonthlyUnits || 1));
-  const recoveryMonths = Math.max(1, Number(safe.settings?.pricingInvestmentRecoveryMonths || 1));
+  const pricing = safe.settings as any;
+  const targetProfitPercent = Number(pricing?.pricingTargetProfitPercent || 0);
+  const expectedMonthlyUnits = Math.max(1, Number(pricing?.pricingExpectedMonthlyUnits || 1));
+  const recoveryMonths = Math.max(1, Number(pricing?.pricingInvestmentRecoveryMonths || 1));
   const allocatedExpensePerUnit = expenses / expectedMonthlyUnits;
   const allocatedInvestmentPerUnit = investments / recoveryMonths / expectedMonthlyUnits;
   const allocatedLossPerUnit = losses / expectedMonthlyUnits;
@@ -146,7 +147,7 @@ function buildContext(input: any): string {
     ventasHoy: todaySales,
     ventasMes: monthSales,
     gastos: expenses,
-    inversiones,
+    inversiones: investments,
     retiros: withdrawals,
     ingresosEntregados: deliveredRevenue,
     costoEntregado: deliveredCost,
@@ -344,37 +345,7 @@ router.post('/asesor', autenticar, async (req: AuthRequest, res: Response) => {
             content: [{ type: 'input_text', text: item.content }]
           }))
         ],
-        text: {
-          format: {
-            type: 'json_schema',
-            name: 'diego_bakery_advisor',
-            strict: false,
-            schema: {
-              type: 'object',
-              properties: {
-                answer: { type: 'string' },
-                actions: {
-                  type: 'array',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      collection: {
-                        type: 'string',
-                        enum: ['products','ingredients','recipes','suppliers','customers','promotions','combos','loyaltyRewards','services','orders','money','debts','losses','notifications','reviews']
-                      },
-                      action: { type: 'string', enum: ['add','update','delete'] },
-                      id: { type: ['string','null'] },
-                      value: { type: ['object','null'], additionalProperties: true },
-                      reason: { type: 'string' }
-                    },
-                    required: ['collection','action','id','value','reason']
-                  }
-                }
-              },
-              required: ['answer','actions']
-            }
-          }
-        }
+
       })
     });
 
