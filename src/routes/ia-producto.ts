@@ -27,6 +27,31 @@ function sanitizeState(state: any) {
   };
 }
 
+function normalizeUnit(value: string): string {
+  const raw = String(value || '').trim().toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '');
+  const aliases: Record<string, string> = {
+    gr: 'g', gramo: 'g', gramos: 'g', kilo: 'kg', kilos: 'kg', kilogramo: 'kg', kilogramos: 'kg',
+    miligramo: 'mg', miligramos: 'mg', mililitro: 'ml', mililitros: 'ml', litro: 'l', litros: 'l',
+    cucharadita: 'tsp', cucharaditas: 'tsp', cdta: 'tsp', cucharada: 'tbsp', cucharadas: 'tbsp', cda: 'tbsp',
+    taza: 'cup', tazas: 'cup', unidad: 'und', unidades: 'und', pieza: 'und', piezas: 'und'
+  };
+  return aliases[raw] || raw;
+}
+
+function convertQuantity(quantity: number, fromUnit?: string, toUnit?: string): number | null {
+  const from = normalizeUnit(fromUnit || '');
+  const to = normalizeUnit(toUnit || '');
+  if (!from || !to || from === to) return quantity;
+  const defs: Record<string, { dimension: string; factor: number }> = {
+    mg: { dimension: 'mass', factor: 0.001 }, g: { dimension: 'mass', factor: 1 }, kg: { dimension: 'mass', factor: 1000 },
+    ml: { dimension: 'volume', factor: 1 }, l: { dimension: 'volume', factor: 1000 }, tsp: { dimension: 'volume', factor: 5 },
+    tbsp: { dimension: 'volume', factor: 15 }, cup: { dimension: 'volume', factor: 240 }, und: { dimension: 'count', factor: 1 }
+  };
+  const a = defs[from], b = defs[to];
+  if (!a || !b || a.dimension !== b.dimension) return null;
+  return quantity * a.factor / b.factor;
+}
+
 function calculateCostFromDraft(draft: any, state: any) {
   if (!draft || !Array.isArray(draft.ingredients) || draft.ingredients.length === 0) return undefined;
 
@@ -41,7 +66,8 @@ function calculateCostFromDraft(draft: any, state: any) {
       String(ingredient.name || '').toLowerCase().trim() === normalized
     );
     const unitCost = existing ? Number(existing.unitCost || 0) : Number(item.unitCost || 0);
-    ingredientCost += quantity * unitCost;
+    const converted = existing ? convertQuantity(quantity, item.unit, existing.unit) : quantity;
+    ingredientCost += (converted == null ? quantity : converted) * unitCost;
   }
 
   const packagingCost = Math.max(0, Number(draft.packagingCost || 0));
