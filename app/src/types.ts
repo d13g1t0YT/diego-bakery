@@ -302,6 +302,53 @@ export interface BusinessState {
   admin?: LocalAdmin;
   lastSyncAt?: string;
   lastLocalChangeAt?: string;
+  __calculations?: BusinessCalculations;
+}
+
+export interface BusinessCalculations {
+  sales: number;
+  expenses: number;
+  investments: number;
+  withdrawals: number;
+  debtCollected: number;
+  debtPaid: number;
+  losses: number;
+  cash: number;
+  inventoryValue: number;
+  accountsReceivable: number;
+  accountsPayable: number;
+  deliveredRevenue: number;
+  deliveredCost: number;
+  grossProfit: number;
+  netProfit: number;
+  capitalContributed: number;
+  capitalRecovered: number;
+  workingCapital: number;
+  averageTicket: number;
+  monthlyFixedCost: number;
+  monthlyInvestmentRecovery: number;
+  monthlyLossAllowance: number;
+  targetProfitAmount: number;
+  breakEvenRevenue: number;
+  recommendedRevenue: number;
+  productPricing: ProductPricing[];
+  totalRecommendedRevenue: number;
+  formulas: Array<{ name: string; formula: string; value: number }>;
+}
+
+export interface ProductPricing {
+  productId: string;
+  productName: string;
+  ingredientCost: number;
+  directProductionCost: number;
+  allocatedExpenses: number;
+  allocatedInvestment: number;
+  allocatedLosses: number;
+  totalCost: number;
+  targetProfit: number;
+  recommendedPrice: number;
+  currentPrice: number;
+  marginAtCurrentPrice: number;
 }
 
 export const uid = (prefix: string): string =>
