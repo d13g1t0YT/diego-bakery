@@ -49,6 +49,7 @@ router.post('/', async (req, res: Response) => {
     const items = req.body?.items;
     const subtotal = Number(req.body?.subtotal);
     const discount = Number(req.body?.descuento || 0);
+    const deliveryFee = Number(req.body?.delivery_fee || 0);
     const total = Number(req.body?.total);
 
     if (!clientRef || !name || !/^\d{6,20}$/.test(phone || '') || !isItems(items)) {
@@ -58,6 +59,7 @@ router.post('/', async (req, res: Response) => {
 
     if (!Number.isFinite(subtotal) || subtotal < 0 ||
         !Number.isFinite(discount) || discount < 0 || discount > subtotal ||
+        !Number.isFinite(deliveryFee) || deliveryFee < 0 ||
         !Number.isFinite(total) || total < 0) {
       res.status(400).json({ error: 'Importes inválidos' });
       return;
@@ -69,14 +71,14 @@ router.post('/', async (req, res: Response) => {
 
     if (Math.abs(calculatedSubtotal - subtotal) > epsilon ||
         Math.abs(calculatedFromUnitPrices - subtotal) > epsilon ||
-        Math.abs((subtotal - discount) - total) > epsilon) {
+        Math.abs((subtotal - discount + deliveryFee) - total) > epsilon) {
       res.status(400).json({ error: 'Los importes del pedido no coinciden.' });
       return;
     }
 
     const result = await pool.query(
-      'INSERT INTO pedidos_publicos (cliente_ref, cliente_nombre, telefono, direccion, notas, items, subtotal, descuento, total) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9) ON CONFLICT (cliente_ref) DO UPDATE SET actualizado_en = CURRENT_TIMESTAMP RETURNING *',
-      [clientRef, name, phone, address, notes, JSON.stringify(items), subtotal, discount, total]
+      'INSERT INTO pedidos_publicos (cliente_ref, cliente_nombre, telefono, direccion, notas, items, subtotal, descuento, delivery_fee, total) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10) ON CONFLICT (cliente_ref) DO UPDATE SET actualizado_en = CURRENT_TIMESTAMP RETURNING *',
+      [clientRef, name, phone, address, notes, JSON.stringify(items), subtotal, discount, deliveryFee, total]
     );
 
     res.status(201).json(result.rows[0]);
