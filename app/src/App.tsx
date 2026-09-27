@@ -626,6 +626,7 @@ function AppInner() {
       return;
     }
 
+    const newLocalPinHash = newPin ? await hashPin(newPin) : undefined;
     updateState(currentState => {
       if (!currentState.admin) return currentState;
       return {
@@ -634,17 +635,11 @@ function AppInner() {
           ...currentState.admin,
           name: serverUser ? [serverUser.nombre, serverUser.apellido].filter(Boolean).join(' ') : profile.name.trim(),
           phone: serverUser?.telefono || normalizePhone(profile.phone),
-          token: nextToken || currentState.admin.token
+          token: nextToken || currentState.admin.token,
+          ...(newLocalPinHash ? { pinHash: newLocalPinHash } : {})
         }
       };
     });
-
-    if (newPin && (!serverUser || !token || !online || !apiConfigured())) {
-      const pinHash = await hashPin(newPin);
-      updateState(currentState => currentState.admin
-        ? { ...currentState, admin: { ...currentState.admin, pinHash } }
-        : currentState);
-    }
   }
 
   function addMoney(move: Omit<MoneyMove, 'id' | 'date'>) {
