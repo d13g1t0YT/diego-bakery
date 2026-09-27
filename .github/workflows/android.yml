@@ -47,6 +47,12 @@ jobs:
       - name: Build web app
         run: npm run build
 
+      - name: Verify native frontend is bundled
+        shell: bash
+        run: |
+          ! grep -R 'window.location.replace' dist
+          ! grep -R 'diego-bakery-api-clean-production.up.railway.app/app/' dist
+
       - name: Add Android platform
         run: npx cap add android
 
