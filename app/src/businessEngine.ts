@@ -205,7 +205,9 @@ function ingredientConsumption(order: Order, state: BusinessState): Record<strin
       if (!recipe) continue;
       const yieldUnits = Math.max(1, n(recipe.yieldUnits));
       for (const line of recipe.ingredients) {
-        const amount = n(line.quantity) / yieldUnits * entry.quantity;
+        const ingredient = state.ingredients.find(i => i.id === line.ingredientId);
+        const converted = ingredient ? convertQuantity(n(line.quantity), line.unit, ingredient.unit) : n(line.quantity);
+        const amount = (converted == null ? n(line.quantity) : converted) / yieldUnits * entry.quantity;
         consumption[line.ingredientId] = (consumption[line.ingredientId] || 0) + amount;
       }
     }
