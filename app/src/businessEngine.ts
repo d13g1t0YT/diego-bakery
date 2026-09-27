@@ -511,7 +511,7 @@ export function recalculateBusinessState(input: BusinessState, previous?: Busine
       };
       const delta: Record<string, number> = {};
       const keys = new Set([...Object.keys(previousConsumption), ...Object.keys(nextConsumption)]);
-      for (const key of keys) delta[key] = n(previousConsumption[key]) - n(nextConsumption[key]);
+      for (const key of keys) delta[key] = n(nextConsumption[key]) - n(previousConsumption[key]);
       return { order: normalizedOrder, consumptionDelta: delta };
     }
 
