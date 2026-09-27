@@ -529,6 +529,7 @@ function AppInner() {
       items,
       subtotal: number(o.subtotal),
       discount: number(o.descuento),
+      deliveryFee: number(o.delivery_fee),
       total: number(o.total),
       status: STATUS_LABELS[o.estado as OrderStatus] ? o.estado as OrderStatus : 'pendiente',
       paid: 0,
