@@ -54,6 +54,16 @@ export async function login(
   });
 }
 
+export async function updateAdminProfile(
+  token: string,
+  profile: { nombre?: string; apellido?: string; telefono?: string; nuevoPin?: string }
+): Promise<{ token: string; usuario: { id: string; nombre: string; apellido: string; telefono: string } }> {
+  return request('/api/auth/profile', {
+    method: 'PUT',
+    body: JSON.stringify(profile)
+  }, token);
+}
+
 export async function getProducts(token: string): Promise<Product[]> {
   return request('/api/productos', {}, token);
 }
