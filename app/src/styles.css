@@ -492,3 +492,15 @@ td strong{display:block}
 .deep-section h4{margin-bottom:10px}
 .danger-button.small{padding:5px 8px;font-size:12px}
 .danger-button.tiny{padding:2px 7px;font-size:12px;min-width:28px}
+
+/* Intelligent recipe import / AI launch advisor */
+.recipe-import-panel,.new-product-advisor{overflow:hidden}
+.recipe-import-preview{margin-top:16px;display:grid;gap:14px}
+.new-product-chat{display:grid;gap:8px;max-height:360px;overflow:auto;margin:14px 0;padding:8px;border:1px solid var(--border,#ddd);border-radius:12px}
+.chat-bubble{display:grid;gap:4px;padding:10px 12px;border-radius:10px;white-space:pre-wrap}
+.chat-bubble.assistant{background:rgba(127,127,127,.08)}
+.chat-bubble.user{background:rgba(127,127,127,.04);border:1px solid var(--border,#ddd)}
+.chat-bubble b{font-size:12px;opacity:.7}
+.check-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px}
+.check{display:flex;gap:8px;align-items:center;padding:8px;border:1px solid var(--border,#ddd);border-radius:8px}
+.info-box{padding:11px 13px;border:1px solid var(--border,#ddd);border-radius:10px;margin-top:10px}
