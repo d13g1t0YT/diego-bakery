@@ -389,7 +389,7 @@ function AppInner() {
     if (!current) return;
     const changeAt = new Date().toISOString();
     const next = { ...mutator(current), lastLocalChangeAt: changeAt };
-    const calculated = recalculateBusinessState(next);
+    const calculated = recalculateBusinessState(next, current);
     stateRef.current = calculated;
     setState(calculated);
     setSyncState('saving');
@@ -406,7 +406,7 @@ function AppInner() {
     const rawNext = typeof value === 'function' ? value(current) : value;
     const changeAt = new Date().toISOString();
     const next = rawNext ? { ...rawNext, lastLocalChangeAt: changeAt } : rawNext;
-    const calculated = next ? recalculateBusinessState(next) : next;
+    const calculated = next ? recalculateBusinessState(next, current ?? undefined) : next;
     stateRef.current = calculated;
     setState(calculated);
     setSyncState('saving');
@@ -645,18 +645,11 @@ function AppInner() {
   }
 
   function addOrder(order: Order) {
+    // El libro contable se reconstruye desde los pedidos en el motor central.
+    // Así editar monto pagado, método o estado no crea duplicados ni deja saldos viejos.
     updateState(current => ({
       ...current,
-      orders: [order, ...current.orders],
-      money: order.paid > 0 ? [{
-        id: uid('mov'),
-        date: new Date().toISOString(),
-        type: 'venta',
-        amount: order.paid,
-        description: 'Pago del pedido ' + order.id.slice(-6),
-        category: order.paymentMethod || 'venta',
-        method: order.paymentMethod || 'efectivo'
-      }, ...current.money] : current.money
+      orders: [order, ...current.orders]
     }));
   }
 
@@ -693,20 +686,6 @@ function AppInner() {
       const currentOrder = current.orders.find(o => o.id === id);
       if (!currentOrder) return current;
       const next = { ...currentOrder, ...patch };
-      const paidDelta = number(next.paid) - number(currentOrder.paid);
-
-      let money = current.money;
-      if (paidDelta !== 0) {
-        money = [{
-          id: uid('mov'),
-          date: new Date().toISOString(),
-          type: paidDelta > 0 ? 'venta' : 'ajuste',
-          amount: Math.abs(paidDelta),
-          description: 'Pago pedido ' + currentOrder.id.slice(-6),
-          category: next.paymentMethod || 'venta',
-          method: next.paymentMethod || 'efectivo'
-        }, ...money];
-      }
 
       let ingredients = current.ingredients;
       let inventoryDeducted = currentOrder.inventoryDeducted;
@@ -835,6 +814,7 @@ function AppInner() {
       status: 'pendiente',
       paid: 0,
       discountCode: promo?.code,
+      customerId: state.customers.find(c => c.phone === phone)?.id,
       source: 'cliente'
     };
 
