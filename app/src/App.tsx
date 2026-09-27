@@ -687,8 +687,6 @@ function AppInner() {
       if (!currentOrder) return current;
       const next = { ...currentOrder, ...patch };
 
-      let ingredients = current.ingredients;
-      const inventoryDeducted = currentOrder.inventoryDeducted;
       let customers = current.customers;
       if (patch.status === 'entregada' && currentOrder.status !== 'entregada' && !currentOrder.loyaltyAwardedAt) {
         const found = customers.find(c => c.phone === currentOrder.customerPhone);
@@ -712,9 +710,7 @@ function AppInner() {
 
       return {
         ...current,
-        orders: current.orders.map(o => o.id === id ? { ...next, inventoryDeducted } : o),
-        money,
-        ingredients,
+        orders: current.orders.map(o => o.id === id ? next : o),
         customers,
         notifications
       };
