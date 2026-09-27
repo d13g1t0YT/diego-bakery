@@ -5,7 +5,7 @@ const fallbackOrigin = typeof window !== 'undefined' && /^https?:$/.test(window.
   ? window.location.origin
   : '';
 const API_BASE = (configured || fallbackOrigin).replace(/\/$/, '');
-const REQUEST_TIMEOUT_MS = 12000;
+const REQUEST_TIMEOUT_MS = 30000;
 
 async function request<T>(path: string, options: RequestInit = {}, token?: string): Promise<T> {
   if (!API_BASE) throw new Error('Servidor no configurado');
