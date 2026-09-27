@@ -15,16 +15,18 @@ export async function ensureBootstrapAdmin():Promise<void> {
   if(!telefono)return;
   if(!/^\d{6,20}$/.test(telefono))throw new Error('ADMIN_PHONE no tiene un formato válido');
 
-  // Railway references may arrive unresolved in a newly-created service.
-  // In that case, preserve an existing database PIN hash instead of blocking startup.
+  // Bootstrap only creates the initial owner account. Once an active
+  // administrator exists, deployments must never overwrite edited credentials.
   const existing=await pool.query(
-    'SELECT id, pin_hash FROM usuarios WHERE telefono = $1 LIMIT 1',
-    [telefono]
+    'SELECT id FROM usuarios WHERE activo=true ORDER BY creado_en ASC LIMIT 1'
   );
 
   if(existing.rows.length>0) {
-    if(pin && /^\d{4,12}$/.test(pin)) {
-      const pinHash=await bcrypt.hash(pin,12);
+    console.log('✓ Administrador existente preservado');
+    return;
+  }
+
+  const pinHash=await bcrypt.hash(pin,12);
       await pool.query(
         'UPDATE usuarios SET nombre=$1, apellido=$2, pin_hash=$3, activo=true, actualizado_en=CURRENT_TIMESTAMP WHERE telefono=$4',
         [nombre,apellido,pinHash,telefono]
