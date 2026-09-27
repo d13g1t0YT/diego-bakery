@@ -120,7 +120,7 @@ router.post('/nuevo-producto', autenticar, async (req: AuthRequest, res: Respons
     'Debes ayudar a convertir una idea de producto en una ficha comercial y financiera calculable.',
     'Haz una pregunta a la vez. No hagas una lista de 10 preguntas en un solo mensaje.',
     'Pregunta solo por información que todavía falte. Reutiliza datos ya dados por el usuario.',
-    'Como mínimo determina: nombre/idea, presentación, rendimiento (porciones/unidades o tamaño de molde), ingredientes y cantidades, empaque, servicios/energía, mano de obra, otros costos, unidades mensuales estimadas, inversión a recuperar y ganancia objetivo.',
+    'Como mínimo determina: nombre/idea, presentación, rendimiento (porciones/unidades o tamaño de molde), ingredientes y cantidades, empaque, servicios/energía, mano de obra, otros costos, unidades mensuales estimadas, inversión a recuperar y ganancia objetivo. Cuando sea relevante, pregunta también por peso/gramaje, altura, ancho, largo, diámetro, forma, tipo de molde, tipo de empaque, temperatura, tiempo de horneado y apariencia final.',
     'Cuando el usuario mencione un ingrediente existente, usa su costo actual del catálogo. Si no existe, pregunta por su precio de compra y unidad.',
     'Si la receta no tiene cantidades exactas, no inventes cantidades: pregunta.',
     'Cuando tengas datos suficientes, calcula: costo por lote, costo por unidad/porción, gastos asignados, recuperación de inversión, pérdidas si están configuradas, costo completo, ganancia objetivo, margen y precio recomendado.',
@@ -213,7 +213,31 @@ router.post('/nuevo-producto', autenticar, async (req: AuthRequest, res: Respons
                     },
                     pricePerUnit: { type: ['number', 'null'] },
                     pricePerBatch: { type: ['number', 'null'] },
-                    targetMarginPercent: { type: ['number', 'null'] }
+                    targetMarginPercent: { type: ['number', 'null'] },
+                    specifications: {
+                      type: ['object', 'null'],
+                      additionalProperties: false,
+                      properties: {
+                        weight: { type: ['number', 'null'] },
+                        weightUnit: { type: ['string', 'null'] },
+                        height: { type: ['number', 'null'] },
+                        heightUnit: { type: ['string', 'null'] },
+                        width: { type: ['number', 'null'] },
+                        widthUnit: { type: ['string', 'null'] },
+                        length: { type: ['number', 'null'] },
+                        lengthUnit: { type: ['string', 'null'] },
+                        diameter: { type: ['number', 'null'] },
+                        diameterUnit: { type: ['string', 'null'] },
+                        shape: { type: ['string', 'null'] },
+                        moldType: { type: ['string', 'null'] },
+                        packagingType: { type: ['string', 'null'] },
+                        temperature: { type: ['number', 'null'] },
+                        temperatureUnit: { type: ['string', 'null'] },
+                        bakingTimeMinutes: { type: ['number', 'null'] },
+                        finalAppearance: { type: ['string', 'null'] }
+                      },
+                      required: ['weight','weightUnit','height','heightUnit','width','widthUnit','length','lengthUnit','diameter','diameterUnit','shape','moldType','packagingType','temperature','temperatureUnit','bakingTimeMinutes','finalAppearance']
+                    }
                   },
                   required: ['name', 'description', 'category', 'presentation', 'yieldUnits', 'packagingCost', 'utilityCost', 'serviceCost', 'laborHours', 'laborRate', 'otherCost', 'ingredients', 'procedure', 'pricePerUnit', 'pricePerBatch', 'targetMarginPercent']
                 }
