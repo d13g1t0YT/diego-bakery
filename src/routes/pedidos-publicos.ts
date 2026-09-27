@@ -1,8 +1,16 @@
 import { Router, Response } from 'express';
+import { rateLimit } from 'express-rate-limit';
 import { pool } from '../db/connection.js';
 import { autenticar, AuthRequest } from '../middleware/auth.js';
 
 const router = Router();
+
+router.use(rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false
+}));
 
 function nonEmptyString(value: unknown, max: number): string | null {
   if (typeof value !== 'string') return null;
@@ -11,7 +19,24 @@ function nonEmptyString(value: unknown, max: number): string | null {
 }
 
 function isItems(value: unknown): value is Array<Record<string, unknown>> {
-  return Array.isArray(value) && value.length > 0 && value.every(item => typeof item === 'object' && item !== null);
+  if (!Array.isArray(value) || value.length === 0 || value.length > 100) return false;
+  return value.every(item => {
+    if (!item || typeof item !== 'object') return false;
+    const row = item as Record<string, unknown>;
+    const quantity = Number(row.quantity);
+    const unitPrice = Number(row.unitPrice);
+    const itemSubtotal = Number(row.subtotal);
+    return (
+      typeof row.productId === 'string' &&
+      row.productId.length <= 200 &&
+      typeof row.productName === 'string' &&
+      row.productName.trim().length > 0 &&
+      row.productName.length <= 255 &&
+      Number.isFinite(quantity) && quantity > 0 && quantity <= 1000 &&
+      Number.isFinite(unitPrice) && unitPrice >= 0 &&
+      Number.isFinite(itemSubtotal) && itemSubtotal >= 0
+    );
+  });
 }
 
 router.post('/', async (req, res: Response) => {
@@ -26,13 +51,26 @@ router.post('/', async (req, res: Response) => {
     const discount = Number(req.body?.descuento || 0);
     const total = Number(req.body?.total);
 
-    if (!name || !/^\d{6,20}$/.test(phone || '') || !isItems(items)) {
+    if (!clientRef || !name || !/^\d{6,20}$/.test(phone || '') || !isItems(items)) {
       res.status(400).json({ error: 'Datos del pedido inválidos' });
       return;
     }
 
-    if (!Number.isFinite(subtotal) || subtotal < 0 || !Number.isFinite(discount) || discount < 0 || !Number.isFinite(total) || total < 0) {
+    if (!Number.isFinite(subtotal) || subtotal < 0 ||
+        !Number.isFinite(discount) || discount < 0 || discount > subtotal ||
+        !Number.isFinite(total) || total < 0) {
       res.status(400).json({ error: 'Importes inválidos' });
+      return;
+    }
+
+    const calculatedSubtotal = items.reduce((sum, item) => sum + Number(item.subtotal || 0), 0);
+    const calculatedFromUnitPrices = items.reduce((sum, item) => sum + Number(item.unitPrice || 0) * Number(item.quantity || 0), 0);
+    const epsilon = 0.011;
+
+    if (Math.abs(calculatedSubtotal - subtotal) > epsilon ||
+        Math.abs(calculatedFromUnitPrices - subtotal) > epsilon ||
+        Math.abs((subtotal - discount) - total) > epsilon) {
+      res.status(400).json({ error: 'Los importes del pedido no coinciden.' });
       return;
     }
 
