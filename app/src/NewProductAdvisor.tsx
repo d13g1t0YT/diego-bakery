@@ -105,7 +105,8 @@ export function NewProductAdvisor({
           diameter: 0, diameterUnit: 'cm', shape: '',
           moldType: '', packagingType: draft.presentation?.trim() || '',
           temperature: 0, temperatureUnit: '°C', bakingTimeMinutes: 0,
-          finalAppearance: ''
+          finalAppearance: '',
+          ...(draft.specifications || {})
         }
       };
 
