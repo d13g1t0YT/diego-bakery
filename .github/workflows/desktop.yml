@@ -35,6 +35,12 @@ jobs:
           npm install
           npm run build
 
+      - name: Verify native desktop loader
+        shell: pwsh
+        run: |
+          if ((Get-Content main.cjs -Raw) -match 'loadURL') { throw 'Desktop must not load the remote web app.' }
+          if ((Get-Content main.cjs -Raw) -match 'diego-bakery-api-clean-production.up.railway.app/app/') { throw 'Desktop contains the remote web app URL.' }
+
       - name: Build Windows desktop package
         working-directory: desktop
         run: |
