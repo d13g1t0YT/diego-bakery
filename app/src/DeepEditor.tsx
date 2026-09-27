@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import type { BusinessState } from './types';
 import { recalculateBusinessState } from './businessEngine';
 import { uid } from './types';
+import { RecipeImportPanel } from './RecipeImportPanel';
 
 type CollectionKey =
   | 'products' | 'ingredients' | 'recipes' | 'suppliers' | 'customers'
@@ -305,6 +306,7 @@ export function DeepEditor({
   const primitive= draft ? Object.entries(draft).filter(([,v])=>v===null || typeof v!=='object') : [];
 
   return <div className="content">
+    <RecipeImportPanel state={state} onChange={onChange} />
     <section className="panel">
       <div className="panel-head"><div><p className="eyebrow">CONTROL TOTAL</p><h3>Editor profundo</h3></div><span className="status">{items.length} registros</span></div>
       <p className="muted">Todo se puede crear, modificar, duplicar o eliminar. Los objetos y listas también se editan desde controles individuales; no necesitas escribir JSON. Al guardar, el motor recalcula costos, precios, márgenes, inventario, referencias, pedidos abiertos y finanzas.</p>
