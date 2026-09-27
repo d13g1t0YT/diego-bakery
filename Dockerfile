@@ -13,6 +13,7 @@ COPY app/package*.json ./app/
 RUN cd app && npm install
 
 COPY app ./app
+RUN npm run test:business
 RUN cd app && npm run build
 
 FROM node:20-alpine
