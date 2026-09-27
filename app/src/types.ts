@@ -243,6 +243,7 @@ export interface Debt {
   dueDate?: string;
   description: string;
   paid: boolean;
+  paidAt?: string;
   paymentMethod?: PaymentMethod;
 }
 
