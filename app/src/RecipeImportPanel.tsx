@@ -169,7 +169,8 @@ export function RecipeImportPanel({
             flavors: [],
             sizes: [],
             presentation: 'Por definir',
-            customizable: false
+            customizable: false,
+            specifications: result?.recipe.specifications
           };
 
       const recipe = calculateRecipeCost({
@@ -193,12 +194,13 @@ export function RecipeImportPanel({
         otherCost: 0,
         totalCost: 0,
         salePrice: Number(product.price) || 0,
-        margin: 0
+        margin: 0,
+        specifications: result?.recipe.specifications
       }, localIngredients, current.services, current.settings);
 
       const nextProducts = hasProduct
         ? current.products.map(item => item.id === productId
-            ? { ...item, name: draftName.trim() }
+            ? { ...item, name: draftName.trim(), specifications: result?.recipe.specifications || item.specifications }
             : item)
         : [product, ...current.products];
 
