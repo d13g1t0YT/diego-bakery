@@ -143,6 +143,63 @@ export async function getPublicOrders(token: string): Promise<any[]> {
   return request('/api/pedidos-publicos', {}, token);
 }
 
+export interface RecipeImportResponse {
+  filename: string;
+  format: 'txt' | 'docx' | 'pdf';
+  extractedCharacters: number;
+  recipe: {
+    name: string;
+    yieldUnits: number;
+    ingredients: Array<{
+      name: string;
+      quantity: number;
+      unit: string;
+      raw?: string;
+      confidence?: number;
+    }>;
+    procedure: string[];
+    notes: string[];
+    sourceFormat: 'txt' | 'docx' | 'pdf';
+    warnings: string[];
+    confidence: number;
+  };
+}
+
+export async function importRecipeFile(token: string, file: File): Promise<RecipeImportResponse> {
+  if (!file) throw new Error('Selecciona un archivo.');
+  const form = new FormData();
+  form.append('file', file);
+  return request('/api/recetas/importar', {
+    method: 'POST',
+    body: form
+  }, token);
+}
+
+export interface NewProductAiResponse {
+  message: string;
+  question?: string;
+  field?: string;
+  ready: boolean;
+  estimate?: {
+    yieldUnits?: number;
+    unitCost?: number;
+    totalBatchCost?: number;
+    suggestedPrice?: number;
+    confidence?: number;
+  };
+}
+
+export async function askNewProductAi(
+  token: string,
+  state: BusinessState,
+  conversation: Array<{ role: 'user' | 'assistant'; content: string }>
+): Promise<NewProductAiResponse> {
+  return request('/api/ia/nuevo-producto', {
+    method: 'POST',
+    body: JSON.stringify({ state, conversation: conversation.slice(-16) })
+  }, token);
+}
+
 export async function askBusinessAi(
   token: string,
   question: string,
