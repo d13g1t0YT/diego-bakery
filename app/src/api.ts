@@ -187,6 +187,17 @@ export interface NewProductAiResponse {
     suggestedPrice?: number;
     confidence?: number;
   };
+  productDraft?: {
+    name?: string;
+    description?: string;
+    category?: string;
+    presentation?: string;
+    ingredients?: Array<{ name: string; quantity: number; unit: string; unitCost?: number }>;
+    procedure?: string[];
+    pricePerUnit?: number;
+    pricePerBatch?: number;
+    targetMarginPercent?: number;
+  };
 }
 
 export async function askNewProductAi(
