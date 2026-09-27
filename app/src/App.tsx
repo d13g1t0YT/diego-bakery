@@ -605,6 +605,7 @@ function AppInner() {
     const token = current.admin?.token;
     let nextToken = token;
     let serverUser: { nombre: string; apellido: string; telefono: string } | undefined;
+    let newLocalPinHash: string | undefined;
 
     if (token && online && apiConfigured()) {
       const parts = profile.name.trim().split(/\s+/).filter(Boolean);
@@ -620,17 +621,10 @@ function AppInner() {
       serverUser = result.usuario;
       await writeSessionToken(result.token);
     } else if (newPin) {
-      const pinHash = await hashPin(newPin);
-      updateState(currentState => ({
-        ...currentState,
-        admin: currentState.admin
-          ? { ...currentState.admin, pinHash }
-          : currentState.admin
-      }));
-      return;
+      // Offline profile edits must stay atomic: changing the PIN must not
+      // discard simultaneous name/phone changes.
+      newLocalPinHash = await hashPin(newPin);
     }
-
-    const newLocalPinHash = newPin ? await hashPin(newPin) : undefined;
     updateState(currentState => {
       if (!currentState.admin) return currentState;
       return {
