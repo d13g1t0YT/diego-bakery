@@ -1016,7 +1016,7 @@ function AppInner() {
         {section === 'deudas' && <DebtsView debts={state.debts} setDebts={items => updateState(current => ({ ...current, debts: items }))} />}
         {section === 'perdidas' && <LossesView state={state} setState={commitState} />}
         {section === 'reportes' && <ReportsView state={state} derived={derived} />}
-        {section === 'asistente' && <BusinessAiView state={state} derived={derived} token={state.admin?.token} />}
+        {section === 'asistente' && <BusinessAiView state={state} derived={derived} token={state.admin?.token} onApplyState={commitState} />}
         {section === 'editar' && <UniversalEditor state={state} onChange={updateState} />}
         {section === 'ajustes' && <SettingsView state={state} update={patch => updateState(current => ({ ...current, settings: { ...current.settings, ...patch } }))} exportBackup={() => downloadBackup(state)} onRestore={async file => { const restored = await restoreBackup(file); stateRef.current = restored; commitState(restored); setMessage('Respaldo restaurado.'); }} healthCheck={async () => { try { await pingHealth(); setMessage('Servidor disponible.'); } catch { setMessage('No se pudo contactar al servidor.'); } }} />}
       </main>
@@ -1453,7 +1453,7 @@ export default App;
 
 type AssistantMessage = { role: 'user' | 'assistant'; content: string };
 
-function BusinessAiView({ state, derived, token }: { state: BusinessState; derived: any; token?: string }) {
+function BusinessAiView({ state, derived, token, onApplyState }: { state: BusinessState; derived: any; token?: string; onApplyState: (next: BusinessState) => void }) {
   const [messages, setMessages] = useState<AssistantMessage[]>([]);
   const [question, setQuestion] = useState('');
   const [loading, setLoading] = useState(false);
@@ -1510,8 +1510,7 @@ function BusinessAiView({ state, derived, token }: { state: BusinessState; deriv
       role: 'assistant',
       content: 'Apliqué el plan. Los costos, precios recomendados, referencias y cuentas dependientes se recalcularon automáticamente.'
     }]));
-    // El estado se actualiza mediante un evento interno que escucha el contenedor.
-    window.dispatchEvent(new CustomEvent('diego-bakery-apply-state', { detail: next }));
+    onApplyState(next);
   }
 
   return <div className="content">
