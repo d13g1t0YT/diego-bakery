@@ -108,12 +108,10 @@ function cleanReferences(input: BusinessState): BusinessState {
     productIds: p.productIds.filter(id => productIds.has(id))
   }));
 
-  const combos = input.combos
-    .filter(c => c.productIds.every(id => productIds.has(id)) || c.productIds.length === 0)
-    .map(c => ({
-      ...c,
-      productIds: c.productIds.filter(id => productIds.has(id))
-    }));
+  const combos = input.combos.map(c => ({
+    ...c,
+    productIds: c.productIds.filter(id => productIds.has(id))
+  }));
 
   const reviews = input.reviews
     .map(r => ({
