@@ -19,6 +19,7 @@ import estadoRoutes from './routes/estado.js';
 import pedidosPublicosRoutes from './routes/pedidos-publicos.js';
 import iaRoutes from './routes/ia.js';
 import recetasRoutes from './routes/recetas.js';
+import iaProductoRoutes from './routes/ia-producto.js';
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -49,6 +50,7 @@ app.use('/api/estado', estadoRoutes);
 app.use('/api/pedidos-publicos', pedidosPublicosRoutes);
 app.use('/api/ia', iaRoutes);
 app.use('/api/recetas', recetasRoutes);
+app.use('/api/ia-producto', iaProductoRoutes);
 
 if (process.env.NODE_ENV === 'production') {
   // Express 4 treats a trailing slash as optional by default, so a plain
