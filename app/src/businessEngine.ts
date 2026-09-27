@@ -122,7 +122,66 @@ function cleanReferences(input: BusinessState): BusinessState {
     favorites: Array.isArray(c.favorites) ? c.favorites.filter(id => productIds.has(id)) : []
   }));
 
-  return { ...input, recipes, ingredients, promotions, combos, reviews, customers };
+  // An open order may reference a customer, but deleting that customer must
+  // never leave a dangling customerId. Historical/terminal orders keep their
+  // snapshot untouched.
+  const orders = input.orders.map(order => {
+    if (terminal(order.status)) return order;
+    if (order.customerId && !customerIds.has(order.customerId)) {
+      return { ...order, customerId: undefined };
+    }
+    return order;
+  });
+
+  return { ...input, recipes, ingredients, promotions, combos, reviews, customers, orders };
+}
+
+export function resolvePromotion(
+  items: Array<{ productId: string; quantity: number; subtotal?: number; unitPrice?: number }>,
+  promotions: BusinessState['promotions'],
+  promotionId?: string,
+  promotionCode?: string,
+  now: Date = new Date()
+): { promotion?: BusinessState['promotions'][number]; discount: number } {
+  const normalizedCode = String(promotionCode || '').trim().toUpperCase();
+
+  const candidate = promotionId
+    ? promotions.find(p => p.id === promotionId)
+    : normalizedCode
+      ? promotions.find(p => p.active && String(p.code || '').trim().toUpperCase() === normalizedCode)
+      : promotions.find(p => p.active && !String(p.code || '').trim());
+
+  if (!candidate || !candidate.active) return { discount: 0 };
+
+  if (candidate.startAt && new Date(candidate.startAt).getTime() > now.getTime()) return { discount: 0 };
+  if (candidate.endAt && new Date(candidate.endAt).getTime() < now.getTime()) return { discount: 0 };
+
+  const eligible = items.filter(item =>
+    !candidate.productIds?.length || candidate.productIds.includes(String(item.productId))
+  );
+  if (!eligible.length) return { discount: 0 };
+
+  const subtotal = eligible.reduce(
+    (sum, item) => sum + Math.max(0, n(item.subtotal ?? (n(item.unitPrice) * n(item.quantity)))),
+    0
+  );
+  const quantity = eligible.reduce((sum, item) => sum + Math.max(0, n(item.quantity)), 0);
+  if (subtotal <= 0) return { promotion: candidate, discount: 0 };
+
+  let discount = 0;
+  if (candidate.type === 'percent') {
+    discount = subtotal * Math.min(100, Math.max(0, n(candidate.value))) / 100;
+  } else if (candidate.type === 'fixed' || candidate.type === 'combo') {
+    discount = Math.min(subtotal, Math.max(0, n(candidate.value)));
+  } else if (candidate.type === 'quantity') {
+    if (quantity >= Math.max(1, n(candidate.minQuantity, 1))) {
+      discount = Math.min(subtotal, Math.max(0, n(candidate.value)));
+    }
+  } else if (candidate.type === 'date_price') {
+    discount = Math.max(0, subtotal - Math.max(0, n(candidate.value)));
+  }
+
+  return { promotion: candidate, discount: round(discount) };
 }
 
 function orderItemSignature(order: Order): string {
@@ -466,6 +525,22 @@ export function recalculateBusinessState(input: BusinessState, previous?: Busine
         items,
         subtotal: round(items.reduce((s, i) => s + n(i.subtotal), 0))
       };
+
+      // A promotion tied to an open order is part of that order's live
+      // dependency graph. Changes to scope, dates, type or value therefore
+      // recalculate the discount and final total automatically.
+      if (normalizedOrder.promotionId || normalizedOrder.discountCode) {
+        const resolvedPromotion = resolvePromotion(
+          items,
+          state.promotions,
+          normalizedOrder.promotionId,
+          normalizedOrder.discountCode
+        );
+        normalizedOrder = {
+          ...normalizedOrder,
+          discount: resolvedPromotion.promotion ? resolvedPromotion.discount : 0
+        };
+      }
 
       normalizedOrder.total = round(
         Math.max(
