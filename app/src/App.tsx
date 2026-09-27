@@ -1481,7 +1481,8 @@ function BusinessAiView({ state, derived, token, onApplyState }: { state: Busine
     'Revisa inventario, recetas, costos, stock bajo y pérdidas; corrige lo que esté mal.',
     'Revisa precios y márgenes y prepara cambios para que los precios queden acordes con mis costos y gastos.',
     'Revisa pedidos, pagos, deudas y finanzas y dime qué debo corregir.',
-    'Organiza mi negocio y crea los registros que falten cuando puedas hacerlo con mis datos.'
+    'Organiza mi negocio y crea los registros que falten cuando puedas hacerlo con mis datos.',
+    'Diseña un plan de marketing y crecimiento para aumentar ventas, margen, clientes recurrentes y recomendaciones usando mis productos, clientes, ventas, promociones y costos actuales.'
   ];
 
   async function send(text?: string) {
