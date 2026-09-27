@@ -181,7 +181,8 @@ function buildContext(input: any): string {
     stockBajo: lowStock,
     vencimientosRegistrados: expiredOrSoon,
     productosMasVendidos: topProducts,
-    configuracionPrecios: safe.settings
+    configuracionPrecios: safe.settings,
+    calculosCentralizados: safe.calculations
   };
 
   const context = JSON.stringify({ summary, data });
@@ -306,7 +307,7 @@ router.post('/asesor', autenticar, async (req: AuthRequest, res: Response) => {
                 answer: { type: 'string' },
                 actions: {
                   type: 'array',
-                  maxItems: 20,
+                  maxItems: 50,
                   items: {
                     type: 'object',
                     additionalProperties: false,
