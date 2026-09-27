@@ -224,6 +224,16 @@ export interface NewProductAiResponse {
     pricePerUnit?: number;
     pricePerBatch?: number;
     targetMarginPercent?: number;
+    specifications?: {
+      weight?: number; weightUnit?: string;
+      height?: number; heightUnit?: string;
+      width?: number; widthUnit?: string;
+      length?: number; lengthUnit?: string;
+      diameter?: number; diameterUnit?: string;
+      shape?: string; moldType?: string; packagingType?: string;
+      temperature?: number; temperatureUnit?: string;
+      bakingTimeMinutes?: number; finalAppearance?: string;
+    };
   };
 }
 
