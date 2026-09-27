@@ -6,6 +6,7 @@ import { calculateRecipeCost, type BusinessState, type Customer, type Debt, type
 import { CashRegisterView, CombosView, CustomersView, LoyaltyView, NotificationsView, PromotionsView, RecipesView, ServicesView, SuppliersView } from './BusinessFeatures';
 import { csvDownload, downloadBackup, loadState, restoreBackup, saveState } from './storage';
 import { applyBusinessChange, recalculateBusinessState } from './businessEngine';
+import { DeepEditor } from './DeepEditor';
 
 type Mode = 'admin' | 'cliente';
 type Section =
@@ -1016,7 +1017,7 @@ function AppInner() {
         {section === 'perdidas' && <LossesView state={state} setState={commitState} />}
         {section === 'reportes' && <ReportsView state={state} derived={derived} />}
         {section === 'asistente' && <BusinessAiView state={state} derived={derived} token={state.admin?.token} onApplyState={commitState} />}
-        {section === 'editar' && <UniversalEditor state={state} onChange={updateState} />}
+        {section === 'editar' && <DeepEditor state={state} onChange={updateState} />}
         {section === 'ajustes' && <SettingsView state={state} update={patch => updateState(current => ({ ...current, settings: { ...current.settings, ...patch } }))} exportBackup={() => downloadBackup(state)} onRestore={async file => { const restored = await restoreBackup(file); stateRef.current = restored; commitState(restored); setMessage('Respaldo restaurado.'); }} healthCheck={async () => { try { await pingHealth(); setMessage('Servidor disponible.'); } catch { setMessage('No se pudo contactar al servidor.'); } }} />}
       </main>
     </div>
