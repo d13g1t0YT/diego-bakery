@@ -246,7 +246,7 @@ async function enhanceWithAI(
 router.post('/importar', autenticar, upload.single('file'), async (req: AuthRequest, res: Response) => {
   try {
     if (!req.file) {
-      res.status(400).json({ error: 'Selecciona un archivo .docx, .pdf o .txt.' });
+      res.status(400).json({ error: 'Selecciona un archivo .docx, .pdf, .txt, .png, .jpg o .jpeg.' });
       return;
     }
 
@@ -261,9 +261,8 @@ router.post('/importar', autenticar, upload.single('file'), async (req: AuthRequ
       return;
     }
 
-    const fallbackText = text.trim() ? text : 'Documento visual: la información debe extraerse de la imagen o del PDF.';
     const parsed = await enhanceWithAI(
-      parseRecipeText(fallbackText, format),
+      parseRecipeText(text, format),
       text,
       req.file.buffer,
       req.file.mimetype,
