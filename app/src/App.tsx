@@ -214,9 +214,9 @@ function AppInner() {
     void (async () => {
       const loaded = await loadState();
       const token = await readSessionToken();
-      const restored = token && loaded.admin
+      const restored = recalculateBusinessState(token && loaded.admin
         ? { ...loaded, admin: { ...loaded.admin, token } }
-        : loaded;
+        : loaded);
       stateRef.current = restored;
       setState(restored);
       setLoginPhone(restored.admin?.phone ?? '');
@@ -293,8 +293,7 @@ function AppInner() {
     const low = state.ingredients.filter(i => i.stock <= i.minStock && i.minStock > 0);
     if (!low.length) return;
 
-    setState(prev => {
-      if (!prev) return prev;
+    updateState(prev => {
       const today = dateKey();
       const existing = new Set(prev.notifications
         .filter(n => n.type === 'stock' && n.createdAt.slice(0, 10) === today)
