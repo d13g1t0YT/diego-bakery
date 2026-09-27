@@ -1,12 +1,10 @@
 import type {
   BusinessState,
   Customer,
-  Debt,
   MoneyMove,
   Order,
   Product,
   Recipe,
-  ServiceCost,
   ProductPricing
 } from './types';
 import { calculateRecipeCost, uid } from './types';
@@ -86,7 +84,6 @@ function cleanReferences(input: BusinessState): BusinessState {
   const supplierById = new Map(input.suppliers.map(s => [s.id, s]));
   const supplierByName = new Map(input.suppliers.map(s => [s.name.trim().toLowerCase(), s]));
   const serviceIds = new Set(input.services.map(s => s.id));
-  const comboIds = new Set(input.combos.map(c => c.id));
 
   const recipes = input.recipes
     .filter(r => productIds.has(r.productId))
