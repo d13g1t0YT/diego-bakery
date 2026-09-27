@@ -125,6 +125,52 @@ function cleanReferences(input: BusinessState): BusinessState {
   return { ...input, recipes, ingredients, promotions, combos, reviews, customers };
 }
 
+function orderItemSignature(order: Order): string {
+  return order.items
+    .map(item => String(item.productId) + ':' + String(n(item.quantity)))
+    .sort()
+    .join('|');
+}
+
+function ingredientConsumption(order: Order, state: BusinessState): Record<string, number> {
+  const consumption: Record<string, number> = {};
+  for (const item of order.items) {
+    const quantity = Math.max(0, n(item.quantity));
+    const entries = String(item.productId).startsWith('combo_')
+      ? (state.combos.find(c => c.id === String(item.productId).slice(6))?.productIds || [])
+          .map(productId => ({ productId, quantity }))
+      : [{ productId: String(item.productId), quantity }];
+
+    for (const entry of entries) {
+      const recipe = state.recipes.find(r => r.productId === entry.productId);
+      if (!recipe) continue;
+      const yieldUnits = Math.max(1, n(recipe.yieldUnits));
+      for (const line of recipe.ingredients) {
+        const amount = n(line.quantity) / yieldUnits * entry.quantity;
+        consumption[line.ingredientId] = (consumption[line.ingredientId] || 0) + amount;
+      }
+    }
+  }
+  return consumption;
+}
+
+function adjustInventoryForOrder(
+  ingredients: BusinessState['ingredients'],
+  oldConsumption: Record<string, number>,
+  newConsumption: Record<string, number>
+) {
+  const ids = new Set([...Object.keys(oldConsumption), ...Object.keys(newConsumption)]);
+  return ingredients.map(ingredient => {
+    if (!ids.has(ingredient.id)) return ingredient;
+    const restored = n(oldConsumption[ingredient.id]);
+    const required = n(newConsumption[ingredient.id]);
+    return {
+      ...ingredient,
+      stock: Math.max(0, round(n(ingredient.stock) + restored - required, 4))
+    };
+  });
+}
+
 function orderItemFromProduct(item: any, state: BusinessState): any | null {
   if (String(item.productId || '').startsWith('combo_')) {
     const comboId = String(item.productId).slice(6);
@@ -389,44 +435,111 @@ export function recalculateBusinessState(input: BusinessState, previous?: Busine
     };
   });
 
-  const orders = state.orders.map(order => {
-    if (terminal(order.status)) return order;
+  const ordersAndIngredients = state.orders.map(order => {
+    const previousOrder = previous?.orders.find(o => o.id === order.id);
+    let normalizedOrder = order;
 
-    const items = order.items
-      .map(item => orderItemFromProduct(item, { ...state, products }))
-      .filter(Boolean);
+    if (!terminal(order.status)) {
+      const items = order.items
+        .map(item => orderItemFromProduct(item, { ...state, products }))
+        .filter(Boolean);
 
-    let nextOrder: Order = {
-      ...order,
-      items,
-      subtotal: round(items.reduce((s, i) => s + n(i.subtotal), 0))
-    };
-
-    nextOrder.total = round(
-      Math.max(0, n(nextOrder.subtotal) - Math.max(0, n(nextOrder.discount)))
-    );
-
-    const customer = order.customerId
-      ? state.customers.find(c => c.id === order.customerId)
-      : state.customers.find(c => c.phone === order.customerPhone);
-
-    if (customer) {
-      nextOrder = {
-        ...nextOrder,
-        customerId: customer.id,
-        customerName: customer.name,
-        customerPhone: customer.phone
+      normalizedOrder = {
+        ...order,
+        items,
+        subtotal: round(items.reduce((s, i) => s + n(i.subtotal), 0))
       };
+
+      normalizedOrder.total = round(
+        Math.max(
+          0,
+          n(normalizedOrder.subtotal) -
+            Math.max(0, n(normalizedOrder.discount)) +
+            Math.max(0, n(normalizedOrder.deliveryFee))
+        )
+      );
+
+      const customer = order.customerId
+        ? state.customers.find(c => c.id === order.customerId)
+        : state.customers.find(c => c.phone === order.customerPhone);
+
+      if (customer) {
+        normalizedOrder = {
+          ...normalizedOrder,
+          customerId: customer.id,
+          customerName: customer.name,
+          customerPhone: customer.phone
+        };
+      }
     }
 
-    return nextOrder;
+    if (!normalizedOrder.inventoryDeducted) {
+      if (normalizedOrder.status === 'preparando') {
+        const consumption = ingredientConsumption(normalizedOrder, { ...state, products });
+        normalizedOrder = {
+          ...normalizedOrder,
+          inventoryDeducted: true,
+          inventoryConsumption: consumption
+        };
+        return { order: normalizedOrder, consumptionDelta: consumption };
+      }
+      return { order: normalizedOrder, consumptionDelta: {} };
+    }
+
+    const existingConsumption = normalizedOrder.inventoryConsumption
+      ? { ...normalizedOrder.inventoryConsumption }
+      : ingredientConsumption(normalizedOrder, { ...state, products });
+
+    if (!normalizedOrder.inventoryConsumption) {
+      normalizedOrder = {
+        ...normalizedOrder,
+        inventoryConsumption: existingConsumption
+      };
+      return { order: normalizedOrder, consumptionDelta: {} };
+    }
+
+    const previousConsumption = previousOrder?.inventoryConsumption || existingConsumption;
+    const itemsChanged = previousOrder
+      ? orderItemSignature(previousOrder) !== orderItemSignature(order)
+      : false;
+
+    if (itemsChanged && !terminal(normalizedOrder.status)) {
+      const nextConsumption = ingredientConsumption(normalizedOrder, { ...state, products });
+      normalizedOrder = {
+        ...normalizedOrder,
+        inventoryConsumption: nextConsumption
+      };
+      const delta: Record<string, number> = {};
+      const keys = new Set([...Object.keys(previousConsumption), ...Object.keys(nextConsumption)]);
+      for (const key of keys) delta[key] = n(previousConsumption[key]) - n(nextConsumption[key]);
+      return { order: normalizedOrder, consumptionDelta: delta };
+    }
+
+    return { order: normalizedOrder, consumptionDelta: {} };
   });
+
+  let adjustedIngredients = state.ingredients;
+  for (const entry of ordersAndIngredients) {
+    const delta = entry.consumptionDelta;
+    if (!Object.keys(delta).length) continue;
+    const keys = Object.keys(delta);
+    adjustedIngredients = adjustedIngredients.map(ingredient => {
+      if (!keys.includes(ingredient.id)) return ingredient;
+      return {
+        ...ingredient,
+        stock: Math.max(0, round(n(ingredient.stock) - n(delta[ingredient.id]), 4))
+      };
+    });
+  }
+
+  const orders = ordersAndIngredients.map(entry => entry.order);
 
   const normalizedState = {
     ...state,
     products,
     recipes,
-    orders
+    orders,
+    ingredients: adjustedIngredients
   } as BusinessState;
 
   const normalizedLedgerState = reconcileLedger(normalizedState);
