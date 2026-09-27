@@ -245,6 +245,22 @@ function financeTotals(state: BusinessState) {
   };
 }
 
+function reconcilePaymentTimestamps(state: BusinessState, previous?: BusinessState): BusinessState {
+  const orders = state.orders.map(order => {
+    const before = previous?.orders.find(o => o.id === order.id);
+    if (n(order.paid) <= 0) return { ...order, paidAt: undefined };
+    if (before && n(before.paid) === n(order.paid)) return order;
+    return { ...order, paidAt: new Date().toISOString() };
+  });
+  const debts = state.debts.map(debt => {
+    const before = previous?.debts.find(d => d.id === debt.id);
+    if (!debt.paid) return { ...debt, paidAt: undefined };
+    if (before?.paid) return debt;
+    return { ...debt, paidAt: new Date().toISOString() };
+  });
+  return { ...state, orders, debts };
+}
+
 function reconcileLedger(state: BusinessState): BusinessState {
   const orderIds = new Set(state.orders.map(o => o.id));
   const legacyDescriptions = new Set(
@@ -263,7 +279,7 @@ function reconcileLedger(state: BusinessState): BusinessState {
     .filter(order => n(order.paid) > 0)
     .map(order => ({
       id: 'mov_order_' + order.id,
-      date: order.createdAt || new Date().toISOString(),
+      date: order.paidAt || order.createdAt || new Date().toISOString(),
       type: 'venta',
       amount: round(n(order.paid)),
       description: 'Pago del pedido ' + order.id.slice(-6),
@@ -277,7 +293,7 @@ function reconcileLedger(state: BusinessState): BusinessState {
     .filter(debt => debt.paid && n(debt.amount) > 0)
     .map(debt => ({
       id: 'mov_debt_' + debt.id,
-      date: debt.dueDate || new Date().toISOString(),
+      date: debt.paidAt || debt.dueDate || new Date().toISOString(),
       type: debt.type === 'cobrar' ? 'cobro_deuda' : 'pago_deuda',
       amount: round(n(debt.amount)),
       description: (debt.type === 'cobrar' ? 'Cobro de deuda ' : 'Pago de deuda ') + debt.id.slice(-6),
@@ -395,6 +411,7 @@ function calculateRegister(state: BusinessState) {
 export function recalculateBusinessState(input: BusinessState, previous?: BusinessState): BusinessState {
   let state = propagateRenamedRelations(input, previous);
   state = cleanReferences(state);
+  state = reconcilePaymentTimestamps(state, previous);
   state = reconcileLedger(state);
 
   const recalculatedRecipes = state.recipes.map(recipe =>
