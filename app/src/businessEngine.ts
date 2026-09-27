@@ -7,7 +7,7 @@ import type {
   Recipe,
   ProductPricing
 } from './types';
-import { calculateRecipeCost, uid } from './types';
+import { calculateRecipeCost, convertQuantity, uid } from './types';
 
 const n = (v: unknown): number => {
   const x = Number(v);
