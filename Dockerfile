@@ -13,6 +13,7 @@ COPY app/package*.json ./app/
 RUN cd app && npm install
 
 COPY app ./app
+COPY scripts ./scripts
 RUN npm run test:business
 RUN cd app && npm run build
 
