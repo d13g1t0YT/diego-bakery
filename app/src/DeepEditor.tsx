@@ -3,6 +3,7 @@ import type { BusinessState } from './types';
 import { recalculateBusinessState } from './businessEngine';
 import { uid } from './types';
 import { RecipeImportPanel } from './RecipeImportPanel';
+import { NewProductAdvisor } from './NewProductAdvisor';
 
 type CollectionKey =
   | 'products' | 'ingredients' | 'recipes' | 'suppliers' | 'customers'
@@ -306,6 +307,7 @@ export function DeepEditor({
   const primitive= draft ? Object.entries(draft).filter(([,v])=>v===null || typeof v!=='object') : [];
 
   return <div className="content">
+    <NewProductAdvisor state={state} onChange={onChange} />
     <RecipeImportPanel state={state} onChange={onChange} />
     <section className="panel">
       <div className="panel-head"><div><p className="eyebrow">CONTROL TOTAL</p><h3>Editor profundo</h3></div><span className="status">{items.length} registros</span></div>
