@@ -1593,10 +1593,6 @@ const EDITABLE_COLLECTIONS = [
 ] as const;
 
 type EditableCollectionKey = typeof EDITABLE_COLLECTIONS[number]['key'];
-const ARRAY_EDITABLE_KEYS = new Set<EditableCollectionKey>(EDITABLE_COLLECTIONS
-  .map(x => x.key)
-  .filter(x => !['settings', 'cashRegister'].includes(x)) as EditableCollectionKey[]);
-
 function createEditableRecord(collection: EditableCollectionKey): any {
   const now = new Date().toISOString();
   const id = uid(collection.slice(0, 4));
