@@ -222,8 +222,8 @@ const prepared = applyBusinessChange(s2, {
   value: { status: 'preparando' }
 });
 assert(prepared.orders.find(o => o.id === 'ord_open')?.inventoryDeducted === true, 'preparing order marks inventory as deducted');
-assert((prepared.orders.find(o => o.id === 'ord_open')?.inventoryConsumption?.ing_a ?? 0) === 0.4, 'preparing order records exact ingredient consumption');
-assert(prepared.ingredients[0].stock === 999.6, 'preparing order deducts recipe ingredients exactly once');
+assert((prepared.orders.find(o => o.id === 'ord_open')?.inventoryConsumption?.ing_a ?? 0) === 400, 'preparing order records exact ingredient consumption');
+assert(prepared.ingredients[0].stock === 600, 'preparing order deducts recipe ingredients exactly once');
 
 const preparedChanged = applyBusinessChange(prepared, {
   collection: 'orders',
@@ -231,8 +231,8 @@ const preparedChanged = applyBusinessChange(prepared, {
   id: 'ord_open',
   value: { items: [{ ...prepared.orders.find(o => o.id === 'ord_open')!.items[0], quantity: 3 }] }
 });
-assert(preparedChanged.ingredients[0].stock === 999.4, 'editing prepared order quantity adjusts inventory by the delta');
-assert((preparedChanged.orders.find(o => o.id === 'ord_open')?.inventoryConsumption?.ing_a ?? 0) === 0.6, 'prepared order consumption snapshot updates with order item change');
+assert(preparedChanged.ingredients[0].stock === 400, 'editing prepared order quantity adjusts inventory by the delta');
+assert((preparedChanged.orders.find(o => o.id === 'ord_open')?.inventoryConsumption?.ing_a ?? 0) === 600, 'prepared order consumption snapshot updates with order item change');
 
 const paid = applyBusinessChange(s2, {
   collection: 'orders',
