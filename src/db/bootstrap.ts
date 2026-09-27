@@ -2,43 +2,65 @@ import 'dotenv/config';
 import bcrypt from 'bcryptjs';
 import { pool } from './connection.js';
 
-function env(name: string): string | undefined {
-  const value = process.env[name]?.trim();
-  return value || undefined;
+function env(name:string):string|undefined {
+  const value=process.env[name]?.trim();
+  return value||undefined;
 }
 
-export async function ensureBootstrapAdmin(): Promise<void> {
-  const telefono = env('ADMIN_PHONE');
-  const pin = env('ADMIN_PIN');
-  const nombre = env('ADMIN_NAME') || 'Administrador';
-  const apellido = env('ADMIN_LASTNAME') || 'Diego Bakery';
+export async function ensureBootstrapAdmin():Promise<void> {
+  const telefono=env('ADMIN_PHONE');
+  const pin=env('ADMIN_PIN');
+  const nombre=env('ADMIN_NAME')||'Administrador';
+  const apellido=env('ADMIN_LASTNAME')||'Diego Bakery';
+  if(!telefono)return;
+  if(!/^\d{6,20}$/.test(telefono))throw new Error('ADMIN_PHONE no tiene un formato válido');
 
-  if (!telefono || !pin) return;
-
-  if (!/^\d{6,20}$/.test(telefono) || !/^\d{4,12}$/.test(pin)) {
-    throw new Error('ADMIN_PHONE o ADMIN_PIN no tienen un formato válido');
-  }
-
-  const existing = await pool.query(
-    'SELECT id FROM usuarios WHERE telefono = $1 LIMIT 1',
+  // Railway references may arrive unresolved in a newly-created service.
+  // In that case, preserve an existing database PIN hash instead of blocking startup.
+  const existing=await pool.query(
+    'SELECT id, pin_hash FROM usuarios WHERE telefono = $1 LIMIT 1',
     [telefono]
   );
 
-  const pinHash = await bcrypt.hash(pin, 12);
-
-  if (existing.rows.length > 0) {
-    await pool.query(
-      'UPDATE usuarios SET nombre = $1, apellido = $2, pin_hash = $3, activo = true WHERE telefono = $4',
-      [nombre, apellido, pinHash, telefono]
-    );
-    console.log('✓ Administrador principal actualizado desde variables de entorno');
+  if(existing.rows.length>0) {
+    if(pin && /^\d{4,12}$/.test(pin)) {
+      const pinHash=await bcrypt.hash(pin,12);
+      await pool.query(
+        'UPDATE usuarios SET nombre=$1, apellido=$2, pin_hash=$3, activo=true, actualizado_en=CURRENT_TIMESTAMP WHERE telefono=$4',
+        [nombre,apellido,pinHash,telefono]
+      );
+    } else {
+      await pool.query(
+        'UPDATE usuarios SET nombre=$1, apellido=$2, activo=true, actualizado_en=CURRENT_TIMESTAMP WHERE telefono=$3',
+        [nombre,apellido,telefono]
+      );
+    }
+    console.log('✓ Administrador principal listo');
     return;
   }
 
-  await pool.query(
-    'INSERT INTO usuarios (nombre, apellido, telefono, pin_hash) VALUES ($1, $2, $3, $4)',
-    [nombre, apellido, telefono, pinHash]
-  );
+  // If the PIN reference is unavailable but the database already contains an
+  // administrator, move that account to the configured owner phone while
+  // preserving its existing secure PIN hash.
+  if(!pin || !/^\d{4,12}$/.test(pin)) {
+    const fallback=await pool.query(
+      'SELECT id FROM usuarios WHERE activo=true ORDER BY creado_en ASC LIMIT 1'
+    );
+    if(fallback.rows.length>0) {
+      await pool.query(
+        'UPDATE usuarios SET telefono=$1, nombre=$2, apellido=$3, activo=true, actualizado_en=CURRENT_TIMESTAMP WHERE id=$4',
+        [telefono,nombre,apellido,fallback.rows[0].id]
+      );
+      console.log('✓ Administrador existente asociado al teléfono configurado');
+      return;
+    }
+    throw new Error('No existe un administrador inicial y ADMIN_PIN no está disponible');
+  }
 
-  console.log('✓ Administrador principal creado desde variables de entorno');
+  const pinHash=await bcrypt.hash(pin,12);
+  await pool.query(
+    'INSERT INTO usuarios (nombre,apellido,telefono,pin_hash) VALUES ($1,$2,$3,$4)',
+    [nombre,apellido,telefono,pinHash]
+  );
+  console.log('✓ Administrador principal creado');
 }
