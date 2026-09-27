@@ -192,6 +192,13 @@ export interface NewProductAiResponse {
     description?: string;
     category?: string;
     presentation?: string;
+    yieldUnits?: number;
+    packagingCost?: number;
+    utilityCost?: number;
+    serviceCost?: number;
+    laborHours?: number;
+    laborRate?: number;
+    otherCost?: number;
     ingredients?: Array<{ name: string; quantity: number; unit: string; unitCost?: number }>;
     procedure?: string[];
     pricePerUnit?: number;
