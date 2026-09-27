@@ -74,7 +74,7 @@ jobs:
           grep -q 'api/estado' /tmp/app.js
           grep -q 'api/ia/asesor' /tmp/app.js
           grep -q 'diego-bakery-api-clean-production.up.railway.app' /tmp/app.js
-! grep -q 'diego-bakery-api-clean-production.up.railway.app/app/' /tmp/app.js
+          ! grep -q 'diego-bakery-api-clean-production.up.railway.app/app/' /tmp/app.js
           ! grep -q 'local-loader.js' /tmp/app.js
           ! grep -q 'remote-loader.js' /tmp/app.js
           ! grep -q 'boot.js' /tmp/app.js
