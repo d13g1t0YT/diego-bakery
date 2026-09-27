@@ -5,7 +5,7 @@ import { apiConfigured, askBusinessAi, getCloudState, getPublicOrders, login, pi
 import { calculateRecipeCost, type BusinessState, type Customer, type Debt, type Ingredient, type LocalAdmin, type MoneyMove, type MoneyMoveType, type NotificationItem, type Order, type OrderItem, type OrderStatus, type Product, type Recipe, defaultState, money, uid } from './types';
 import { CashRegisterView, CombosView, CustomersView, LoyaltyView, NotificationsView, PromotionsView, RecipesView, ServicesView, SuppliersView } from './BusinessFeatures';
 import { csvDownload, downloadBackup, loadState, restoreBackup, saveState } from './storage';
-import { applyBusinessChange, recalculateBusinessState, type ProductPricing } from './businessEngine';
+import { applyBusinessChange, recalculateBusinessState } from './businessEngine';
 
 type Mode = 'admin' | 'cliente';
 type Section =
@@ -1321,7 +1321,7 @@ function FinanceView({ state, addMoney, balance, updateSettings }: { state: Busi
           updateSettings({ pricingTargetProfitPercent: value });
         }} /></label>
         <label>Unidades estimadas al mes<input type="number" min="1" step="1" value={state.settings.pricingExpectedMonthlyUnits} onChange={e => updateSettings({ pricingExpectedMonthlyUnits: Math.max(1, number(e.target.value)) })} /></label>
-        <label>Recuperar inversiones en (meses)<input type="number" min="1" step="1" value={state.settings.pricingInvestmentRecoveryMonths} onChange={e => window.dispatchEvent(new CustomEvent('diego-bakery-pricing', { detail: { pricingInvestmentRecoveryMonths: Math.max(1, number(e.target.value)) } }))} /></label>
+        <label>Recuperar inversiones en (meses)<input type="number" min="1" step="1" value={state.settings.pricingInvestmentRecoveryMonths} onChange={e => updateSettings({ pricingInvestmentRecoveryMonths: Math.max(1, number(e.target.value)) })} /></label>
       </div>
     </section>
 
