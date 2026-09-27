@@ -357,7 +357,7 @@ export function DeepEditor({
     <RecipeImportPanel state={state} onChange={onChange} />
     <section className="panel">
       <div className="panel-head"><div><p className="eyebrow">CONTROL TOTAL</p><h3>Editor profundo</h3></div><span className="status">{items.length} registros</span></div>
-      <p className="muted">Todo se puede crear, modificar, duplicar o eliminar. Los objetos y listas también se editan desde controles individuales; no necesitas escribir JSON. Al guardar, el motor recalcula costos, precios, márgenes, inventario, referencias, pedidos abiertos y finanzas.</p>
+      <p className="muted">Todo se puede crear, modificar, duplicar o eliminar. Los objetos, listas y relaciones también se editan desde controles individuales; no necesitas escribir JSON. Cada cambio se guarda y recalcula en el momento, actualizando costos, precios, márgenes, inventario, referencias, pedidos abiertos y finanzas.</p>
       <div className="form-grid">
         <label>Área<select value={collection} onChange={e=>{setCollection(e.target.value as CollectionKey);setSelectedId('');setDraft(null);setSearch('')}}>{COLLECTIONS.map(x=><option key={x.key} value={x.key}>{x.label}</option>)}</select></label>
         <label>Buscar registro<input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Nombre, teléfono, ID, etc."/></label>
@@ -371,7 +371,7 @@ export function DeepEditor({
       <div className="form-grid">
         {primitive.map(([key,val])=><FieldEditor key={key} keyName={key} value={val} state={state} onChange={v=>commitDraft({...draft,[key]:v})}/>)}
       </div>
-      <div className="deep-section"><h4>Relaciones, listas y detalles</h4><DeepObjectEditor value={Object.fromEntries(Object.entries(draft).filter(([,v])=>v!==null && typeof v==='object'))} state={state} onChange={v=>setDraft((d:any)=>({...d,...v}))}/></div>
+      <div className="deep-section"><h4>Relaciones, listas y detalles</h4><DeepObjectEditor value={Object.fromEntries(Object.entries(draft).filter(([,v])=>v!==null && typeof v==='object'))} state={state} onChange={v=>commitDraft({...draft,...v})}/></div>
       <div className="button-row">
         <button className="primary" onClick={() => void save()}>Forzar guardado y recálculo</button>
         {collection === 'admin' && onAdminPinChange ? <button className="secondary" onClick={() => void changePin()}>Cambiar PIN</button> : null}
