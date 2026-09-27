@@ -9,13 +9,34 @@ export interface ParsedIngredient {
   confidence: number;
 }
 
+export interface RecipeSpecifications {
+  weight?: number;
+  weightUnit?: string;
+  height?: number;
+  heightUnit?: string;
+  width?: number;
+  widthUnit?: string;
+  length?: number;
+  lengthUnit?: string;
+  diameter?: number;
+  diameterUnit?: string;
+  shape?: string;
+  moldType?: string;
+  packagingType?: string;
+  temperature?: number;
+  temperatureUnit?: string;
+  bakingTimeMinutes?: number;
+  finalAppearance?: string;
+}
+
 export interface ParsedRecipe {
   name: string;
   yieldUnits: number;
   ingredients: ParsedIngredient[];
   procedure: string[];
   notes: string[];
-  sourceFormat: 'txt' | 'docx' | 'pdf';
+  specifications?: RecipeSpecifications;
+  sourceFormat: 'txt' | 'docx' | 'pdf' | 'png' | 'jpg' | 'jpeg';
   warnings: string[];
   confidence: number;
 }
@@ -238,5 +259,9 @@ export async function extractRecipeText(buffer: Buffer, filename: string): Promi
     }
   }
 
-  throw new Error('Formato no soportado. Usa .docx, .pdf o .txt');
+  if (extension === 'png') return { text: '', format: 'png' };
+  if (extension === 'jpg') return { text: '', format: 'jpg' };
+  if (extension === 'jpeg') return { text: '', format: 'jpeg' };
+
+  throw new Error('Formato no soportado. Usa .docx, .pdf, .txt, .png, .jpg o .jpeg');
 }
