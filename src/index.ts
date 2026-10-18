@@ -8,6 +8,7 @@ import express, { NextFunction, Request, Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import { rateLimit } from 'express-rate-limit';
+import { clientIpKeyGenerator } from './rateLimit.js';
 import { initializeDatabase } from './db/connection.js';
 import { runMigrations } from './db/migrate.js';
 import { ensureBootstrapAdmin } from './db/bootstrap.js';
@@ -36,6 +37,7 @@ app.use(rateLimit({
   limit: 300,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: clientIpKeyGenerator,
   // La IA tiene autenticación propia y no debe consumir el límite
   // general de solicitudes de la aplicación.
   skip: (req) =>
