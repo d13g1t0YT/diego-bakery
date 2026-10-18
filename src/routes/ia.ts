@@ -1,9 +1,9 @@
 import { Router, Response } from 'express';
 import { autenticar, AuthRequest } from '../middleware/auth.js';
+import { hasOpenAIKey, requestOpenAI } from '../openaiClient.js';
 
 const router = Router();
 
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-5.6-sol';
 const OPENAI_TIMEOUT_MS = 30000;
 
@@ -237,9 +237,9 @@ function parseStructuredResponse(payload: any): { answer: string; actions: any[]
 }
 
 router.post('/asesor', autenticar, async (req: AuthRequest, res: Response) => {
-  if (!OPENAI_API_KEY) {
+  if (!hasOpenAIKey()) {
     res.status(503).json({
-      error: 'La IA todavía no está conectada. Falta configurar OPENAI_API_KEY en el servidor.'
+      error: 'La IA todavía no está conectada. Falta configurar una clave de OpenAI en el servidor.'
     });
     return;
   }
@@ -289,14 +289,7 @@ router.post('/asesor', autenticar, async (req: AuthRequest, res: Response) => {
   const timeout = setTimeout(() => controller.abort(), OPENAI_TIMEOUT_MS);
 
   try {
-    const response = await fetch('https://api.openai.com/v1/responses', {
-      method: 'POST',
-      headers: {
-        Authorization: 'Bearer ' + OPENAI_API_KEY,
-        'Content-Type': 'application/json'
-      },
-      signal: controller.signal,
-      body: JSON.stringify({
+    const response = await requestOpenAI({
         model: OPENAI_MODEL,
         store: false,
         max_output_tokens: 2200,
@@ -346,8 +339,7 @@ router.post('/asesor', autenticar, async (req: AuthRequest, res: Response) => {
           }))
         ],
 
-      })
-    });
+      }, { signal: controller.signal });
 
     const payload = await response.json().catch(() => ({}));
 
