@@ -7,14 +7,15 @@ RUN npm install
 
 COPY tsconfig.json ./
 COPY src ./src
-RUN npm run build
 
+# The backend build runs regression tests that import files from app/src and scripts/.
+# Copy those sources before npm run build to ensure the test files are available.
 COPY app/package*.json ./app/
 RUN cd app && npm install
-
 COPY app ./app
 COPY scripts ./scripts
-RUN npm run test:business
+
+RUN npm run build
 RUN cd app && npm run build
 
 FROM node:20-alpine
