@@ -3,6 +3,8 @@ import multer from 'multer';
 import { autenticar, AuthRequest } from '../middleware/auth.js';
 import { extractRecipeText, parseRecipeText, type ParsedRecipe } from '../recipeParser.js';
 import { hasOpenAIKey, requestOpenAI } from '../openaiClient.js';
+import { rateLimit } from 'express-rate-limit';
+import { clientIpKeyGenerator } from '../rateLimit.js';
 
 const router = Router();
 
@@ -242,7 +244,13 @@ async function enhanceWithAI(
   }
 }
 
-router.post('/importar', autenticar, upload.single('file'), async (req: AuthRequest, res: Response) => {
+router.post('/importar', rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: clientIpKeyGenerator
+}), autenticar, upload.single('file'), async (req: AuthRequest, res: Response) => {
   try {
     if (!req.file) {
       res.status(400).json({ error: 'Selecciona un archivo .docx, .pdf, .txt, .png, .jpg o .jpeg.' });
