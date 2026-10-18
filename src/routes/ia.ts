@@ -1,11 +1,21 @@
 import { Router, Response } from 'express';
 import { autenticar, AuthRequest } from '../middleware/auth.js';
 import { hasOpenAIKey, requestOpenAI } from '../openaiClient.js';
+import { rateLimit } from 'express-rate-limit';
+import { clientIpKeyGenerator } from '../rateLimit.js';
 
 const router = Router();
 
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-5.6-sol';
 const OPENAI_TIMEOUT_MS = 30000;
+
+router.use(rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: clientIpKeyGenerator
+}));
 
 function sanitizeItem(item: any): any {
   if (!item || typeof item !== 'object') return item;
