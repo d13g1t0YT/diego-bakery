@@ -78,23 +78,30 @@ function safeAiRecipe(value: any, fallback: ParsedRecipe): ParsedRecipe {
   if (!procedure.length && fallback.procedure.length) warnings.push('La IA no pudo mejorar el procedimiento; se conservó la extracción automática.');
 
   const rawSpecs = value.specifications && typeof value.specifications === 'object' ? value.specifications : undefined;
+  const optionalNumber = (input: unknown): number | undefined => {
+    if (input === null || input === undefined || (typeof input === 'string' && input.trim() === '')) {
+      return undefined;
+    }
+    const parsed = Number(input);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  };
   const specifications = rawSpecs ? {
-    weight: Number.isFinite(Number(rawSpecs.weight)) ? Number(rawSpecs.weight) : undefined,
+    weight: optionalNumber(rawSpecs.weight),
     weightUnit: rawSpecs.weightUnit ? String(rawSpecs.weightUnit) : undefined,
-    height: Number.isFinite(Number(rawSpecs.height)) ? Number(rawSpecs.height) : undefined,
+    height: optionalNumber(rawSpecs.height),
     heightUnit: rawSpecs.heightUnit ? String(rawSpecs.heightUnit) : undefined,
-    width: Number.isFinite(Number(rawSpecs.width)) ? Number(rawSpecs.width) : undefined,
+    width: optionalNumber(rawSpecs.width),
     widthUnit: rawSpecs.widthUnit ? String(rawSpecs.widthUnit) : undefined,
-    length: Number.isFinite(Number(rawSpecs.length)) ? Number(rawSpecs.length) : undefined,
+    length: optionalNumber(rawSpecs.length),
     lengthUnit: rawSpecs.lengthUnit ? String(rawSpecs.lengthUnit) : undefined,
-    diameter: Number.isFinite(Number(rawSpecs.diameter)) ? Number(rawSpecs.diameter) : undefined,
+    diameter: optionalNumber(rawSpecs.diameter),
     diameterUnit: rawSpecs.diameterUnit ? String(rawSpecs.diameterUnit) : undefined,
     shape: rawSpecs.shape ? String(rawSpecs.shape) : undefined,
     moldType: rawSpecs.moldType ? String(rawSpecs.moldType) : undefined,
     packagingType: rawSpecs.packagingType ? String(rawSpecs.packagingType) : undefined,
-    temperature: Number.isFinite(Number(rawSpecs.temperature)) ? Number(rawSpecs.temperature) : undefined,
+    temperature: optionalNumber(rawSpecs.temperature),
     temperatureUnit: rawSpecs.temperatureUnit ? String(rawSpecs.temperatureUnit) : undefined,
-    bakingTimeMinutes: Number.isFinite(Number(rawSpecs.bakingTimeMinutes)) ? Number(rawSpecs.bakingTimeMinutes) : undefined,
+    bakingTimeMinutes: optionalNumber(rawSpecs.bakingTimeMinutes),
     finalAppearance: rawSpecs.finalAppearance ? String(rawSpecs.finalAppearance) : undefined
   } : fallback.specifications;
 
