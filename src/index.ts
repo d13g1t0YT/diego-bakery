@@ -134,7 +134,7 @@ async function verifyOpenAIConnection(): Promise<void> {
       body: JSON.stringify({
         model,
         store: false,
-        max_output_tokens: 8,
+        max_output_tokens: 32,
         input: [{ role: 'user', content: [{ type: 'input_text', text: 'Responde únicamente: OK' }] }]
       })
     });
