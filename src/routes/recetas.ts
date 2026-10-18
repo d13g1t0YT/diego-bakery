@@ -261,6 +261,13 @@ router.post('/importar', autenticar, upload.single('file'), async (req: AuthRequ
     const imageFormat = format === 'png' || format === 'jpg' || format === 'jpeg';
     const aiEnabled = Boolean(process.env.OPENAI_API_KEY && process.env.RECIPE_IMPORT_AI === 'true');
 
+    if (imageFormat && !aiEnabled) {
+      res.status(503).json({
+        error: 'La importación desde imágenes requiere activar la IA de recetas en el servidor.'
+      });
+      return;
+    }
+
     if (!text.trim() && !imageFormat && !(format === 'pdf' && aiEnabled)) {
       res.status(422).json({
         error: 'No se pudo extraer texto de ese archivo. Activa la importación IA para analizar PDFs escaneados.'
@@ -275,6 +282,13 @@ router.post('/importar', autenticar, upload.single('file'), async (req: AuthRequ
       req.file.mimetype,
       format
     );
+
+    if (imageFormat && parsed.ingredients.length === 0) {
+      res.status(422).json({
+        error: 'No se reconocieron ingredientes en la imagen. Prueba con una foto más nítida o completa los datos manualmente.'
+      });
+      return;
+    }
 
     res.json({
       filename: req.file.originalname,
