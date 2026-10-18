@@ -1,8 +1,8 @@
 import { Router, Response } from 'express';
 import { autenticar, AuthRequest } from '../middleware/auth.js';
+import { hasOpenAIKey, requestOpenAI } from '../openaiClient.js';
 
 const router = Router();
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-5.6-sol';
 
 function sanitizeState(state: any) {
@@ -124,7 +124,7 @@ function calculateCostFromDraft(draft: any, state: any) {
 }
 
 router.post('/nuevo-producto', autenticar, async (req: AuthRequest, res: Response) => {
-  if (!OPENAI_API_KEY) {
+  if (!hasOpenAIKey()) {
     res.status(503).json({ error: 'La IA no está configurada en el servidor.' });
     return;
   }
@@ -166,14 +166,7 @@ router.post('/nuevo-producto', autenticar, async (req: AuthRequest, res: Respons
   const timer = setTimeout(() => controller.abort(), 30000);
 
   try {
-    const response = await fetch('https://api.openai.com/v1/responses', {
-      method: 'POST',
-      headers: {
-        Authorization: 'Bearer ' + OPENAI_API_KEY,
-        'Content-Type': 'application/json'
-      },
-      signal: controller.signal,
-      body: JSON.stringify({
+    const response = await requestOpenAI({
         model: OPENAI_MODEL,
         store: false,
         max_output_tokens: 1800,
@@ -272,8 +265,7 @@ router.post('/nuevo-producto', autenticar, async (req: AuthRequest, res: Respons
             }
           }
         }
-      })
-    });
+      }, { signal: controller.signal });
 
     if (!response.ok) {
       const body = await response.text().catch(() => '');
