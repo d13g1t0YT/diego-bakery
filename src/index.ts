@@ -20,6 +20,7 @@ import pedidosPublicosRoutes from './routes/pedidos-publicos.js';
 import iaRoutes from './routes/ia.js';
 import recetasRoutes from './routes/recetas.js';
 import iaProductoRoutes from './routes/ia-producto.js';
+import { hasOpenAIKey, requestOpenAI } from './openaiClient.js';
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -112,11 +113,10 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
 
 
 async function verifyOpenAIConnection(): Promise<void> {
-  const apiKey = process.env.OPENAI_API_KEY?.trim();
   const model = process.env.OPENAI_MODEL || 'gpt-5.6-sol';
 
-  if (!apiKey) {
-    console.error('✗ OpenAI IA: OPENAI_API_KEY no está configurada');
+  if (!hasOpenAIKey()) {
+    console.error('✗ OpenAI IA: no hay ninguna clave de OpenAI configurada');
     return;
   }
 
@@ -124,20 +124,12 @@ async function verifyOpenAIConnection(): Promise<void> {
   const timeout = setTimeout(() => controller.abort(), 15000);
 
   try {
-    const response = await fetch('https://api.openai.com/v1/responses', {
-      method: 'POST',
-      headers: {
-        Authorization: 'Bearer ' + apiKey,
-        'Content-Type': 'application/json'
-      },
-      signal: controller.signal,
-      body: JSON.stringify({
+    const response = await requestOpenAI({
         model,
         store: false,
         max_output_tokens: 32,
         input: [{ role: 'user', content: [{ type: 'input_text', text: 'Responde únicamente: OK' }] }]
-      })
-    });
+      }, { signal: controller.signal });
 
     const payload: any = await response.json().catch(() => ({}));
 
