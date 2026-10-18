@@ -55,6 +55,12 @@ export function NewProductAdvisor({
       return;
     }
 
+    const providedSpecifications = Object.fromEntries(
+      Object.entries(draft.specifications || {}).filter(([, value]) =>
+        value !== null && value !== undefined && value !== ''
+      )
+    );
+
     const productId = uid('prd');
     const recipeId = uid('rec');
     const knownIngredients = state.ingredients;
@@ -106,7 +112,7 @@ export function NewProductAdvisor({
           moldType: '', packagingType: draft.presentation?.trim() || '',
           temperature: 0, temperatureUnit: '°C', bakingTimeMinutes: 0,
           finalAppearance: '',
-          ...(draft.specifications || {})
+          ...providedSpecifications
         }
       };
 
