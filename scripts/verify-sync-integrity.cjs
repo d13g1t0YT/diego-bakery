@@ -36,7 +36,11 @@ const checks = [
   ['visual recipe import exists', recipeRoute.includes('input_image') && recipeRoute.includes('.png') && recipeRoute.includes('.jpg')],
   ['recipe UI accepts images', recipeImport.includes('.png') && recipeImport.includes('.jpg')],
   ['deep editor autosaves drafts', deepEditor.includes('function commitDraft') && deepEditor.includes('Guardado y recalculado automáticamente')],
-  ['AI product advisor exposes specifications', api.includes('bakingTimeMinutes') && api.includes('specifications')]
+  ['AI product advisor exposes specifications', api.includes('bakingTimeMinutes') && api.includes('specifications')],
+  ['multipart recipe uploads preserve browser boundary', api.includes('options.body instanceof FormData') && api.includes('!isFormData')],
+  ['AI business context keeps price-model settings', ['pricingTargetProfitPercent','pricingExpectedMonthlyUnits','pricingInvestmentRecoveryMonths','pricingIncludeExpenses','pricingIncludeLosses'].every(key => read('src/routes/ia.ts').includes(key))],
+  ['missing imported physical measurements stay empty', recipeRoute.includes('const optionalNumber') && recipeRoute.includes('input === null')],
+  ['image recipe import does not report empty success', recipeRoute.includes('imageFormat && !aiEnabled') && recipeRoute.includes('imageFormat && parsed.ingredients.length === 0')]
 ];
 
 let failed = 0;
