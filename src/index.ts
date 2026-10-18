@@ -139,7 +139,7 @@ async function verifyOpenAIConnection(): Promise<void> {
       })
     });
 
-    const payload = await response.json().catch(() => ({}));
+    const payload: any = await response.json().catch(() => ({}));
 
     if (!response.ok) {
       const code = payload?.error?.code ? String(payload.error.code) : 'unknown_error';
