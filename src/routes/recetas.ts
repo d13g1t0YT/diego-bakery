@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import multer from 'multer';
 import { autenticar, AuthRequest } from '../middleware/auth.js';
 import { extractRecipeText, parseRecipeText, type ParsedRecipe } from '../recipeParser.js';
+import { hasOpenAIKey, requestOpenAI } from '../openaiClient.js';
 
 const router = Router();
 
@@ -125,8 +126,7 @@ async function enhanceWithAI(
   fileMime: string,
   format: ParsedRecipe['sourceFormat']
 ): Promise<ParsedRecipe> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey || process.env.RECIPE_IMPORT_AI !== 'true') return parsed;
+  if (!hasOpenAIKey() || process.env.RECIPE_IMPORT_AI !== 'true') return parsed;
 
   const prompt = [
     'Analiza esta receta con máxima fidelidad.',
@@ -159,14 +159,7 @@ async function enhanceWithAI(
       content.push({ type: 'input_text', text: originalText.slice(0, 70000) });
     }
 
-    const response = await fetch('https://api.openai.com/v1/responses', {
-      method: 'POST',
-      headers: {
-        Authorization: 'Bearer ' + apiKey,
-        'Content-Type': 'application/json'
-      },
-      signal: controller.signal,
-      body: JSON.stringify({
+    const response = await requestOpenAI({
         model: process.env.OPENAI_MODEL || 'gpt-5.6-sol',
         store: false,
         max_output_tokens: 2800,
@@ -226,8 +219,7 @@ async function enhanceWithAI(
             }
           }
         }
-      })
-    });
+      }, { signal: controller.signal });
 
     if (!response.ok) return parsed;
     const payload: any = await response.json();
@@ -259,7 +251,7 @@ router.post('/importar', autenticar, upload.single('file'), async (req: AuthRequ
 
     const { text, format } = await extractRecipeText(req.file.buffer, req.file.originalname);
     const imageFormat = format === 'png' || format === 'jpg' || format === 'jpeg';
-    const aiEnabled = Boolean(process.env.OPENAI_API_KEY && process.env.RECIPE_IMPORT_AI === 'true');
+    const aiEnabled = Boolean(hasOpenAIKey() && process.env.RECIPE_IMPORT_AI === 'true');
 
     if (imageFormat && !aiEnabled) {
       res.status(503).json({
