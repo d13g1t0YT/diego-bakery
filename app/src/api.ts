@@ -14,7 +14,9 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
   const timer = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   const headers = new Headers(options.headers);
   headers.set('Accept', 'application/json');
-  if (options.body !== undefined) headers.set('Content-Type', 'application/json');
+  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+  // Let the browser add the multipart boundary for FormData uploads (recipe import).
+  if (options.body !== undefined && !isFormData) headers.set('Content-Type', 'application/json');
   if (token) headers.set('Authorization', 'Bearer ' + token);
 
   try {
