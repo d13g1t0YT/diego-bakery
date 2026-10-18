@@ -35,7 +35,12 @@ function sanitizeState(input: any) {
       loyaltyPointsPerSol: state.settings.loyaltyPointsPerSol,
       laborRatePerHour: state.settings.laborRatePerHour,
       defaultUtilityCost: state.settings.defaultUtilityCost,
-      defaultPackagingCost: state.settings.defaultPackagingCost
+      defaultPackagingCost: state.settings.defaultPackagingCost,
+      pricingTargetProfitPercent: state.settings.pricingTargetProfitPercent,
+      pricingExpectedMonthlyUnits: state.settings.pricingExpectedMonthlyUnits,
+      pricingInvestmentRecoveryMonths: state.settings.pricingInvestmentRecoveryMonths,
+      pricingIncludeExpenses: state.settings.pricingIncludeExpenses,
+      pricingIncludeLosses: state.settings.pricingIncludeLosses
     } : {},
     products: Array.isArray(state.products) ? state.products.map(sanitizeItem) : [],
     ingredients: Array.isArray(state.ingredients) ? state.ingredients.map(sanitizeItem) : [],
